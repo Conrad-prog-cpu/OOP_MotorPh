@@ -11,7 +11,8 @@ package model;
 public enum Role {
     EMPLOYEE,
     HRADMIN,
-    IT;
+    IT,
+    HR;
 
     public static Role from(String s) {
         if (s == null) return EMPLOYEE;

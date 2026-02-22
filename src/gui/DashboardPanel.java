@@ -130,7 +130,7 @@ public class DashboardPanel extends JFrame {
         // ============ ROLE-BASED MENU ============
 
         // EMPLOYEE + HRADMIN: Employee page
-        if (role == Role.EMPLOYEE || role == Role.HRADMIN) {
+        if (role == Role.EMPLOYEE || role == Role.HRADMIN || role == Role.HR) {
             JButton employeeBtn = createNavButton("Employee", "employee.png");
             navPanel.add(employeeBtn);
             navPanel.add(Box.createVerticalStrut(5));
