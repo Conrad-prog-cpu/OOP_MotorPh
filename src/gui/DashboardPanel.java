@@ -21,7 +21,7 @@ public class DashboardPanel extends JFrame {
     private JPanel contentPanel;
 
     // Panels
-    private final EmployeePanel employeePanel = new EmployeePanel();
+    private final EmployeeManagementPanel employeePanel = new EmployeeManagementPanel();
 
     private final LeaveRequestPanel leaveRequestPanel;
     private final LeaveApprovalPanel leaveApprovalPanel;
@@ -65,7 +65,7 @@ public class DashboardPanel extends JFrame {
         // If your UserAccountsPanel doesn't have this constructor yet, update it.
         userAccountsPanel = new UserAccountsPanel(credentialRepo, employeeRepo);
 
-        // Apply access rules in EmployeePanel
+        // Apply access rules in EmployeeManagementPanel
         employeePanel.applyAccess(user);
 
         // Sidebar

@@ -25,7 +25,7 @@ import java.awt.*;
 import java.math.BigDecimal;
 import java.util.Vector;
 
-public class EmployeePanel extends JPanel {
+public class EmployeeManagementPanel extends JPanel {
 
     private final Color gradientStart = new Color(255, 204, 229);
     private final Color gradientEnd   = new Color(255, 229, 180);
@@ -46,7 +46,7 @@ public class EmployeePanel extends JPanel {
     // ==========================================================
     // Default constructor (proper wiring, NO duplicate repos)
     // ==========================================================
-    public EmployeePanel() {
+    public EmployeeManagementPanel() {
         this(createDefaultEmployeeRepo(),
              createDefaultAttendanceRepo(),
              null /* will be created below */);
@@ -55,7 +55,7 @@ public class EmployeePanel extends JPanel {
     // ==========================================================
     // Injection constructor
     // ==========================================================
-    public EmployeePanel(EmployeeRepository employeeRepo,
+    public EmployeeManagementPanel(EmployeeRepository employeeRepo,
                          AttendanceRepository attendanceRepo,
                          PayrollService payrollService) {
 
