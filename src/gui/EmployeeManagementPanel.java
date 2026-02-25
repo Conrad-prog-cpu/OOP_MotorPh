@@ -219,14 +219,225 @@ public class EmployeeManagementPanel extends JPanel {
     // ==========================================================
     // ✅ PUT YOUR EXISTING METHODS HERE (from your original file)
     // ==========================================================
-    private void showUpdateDialog() {
-        // paste your existing showUpdateDialog() here (employee update version)
-    }
+        private void showUpdateDialog() {
 
-    private void showDeleteDialog() {
-        // paste your existing showDeleteDialog() here (employee delete version)
-    }
+        int selectedRow = dashboardTable.getTable().getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "⚠ Please select a row to update.", "No Selection", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
+        selectedRow = dashboardTable.getTable().convertRowIndexToModel(selectedRow);
+        String employeeId = dashboardTable.getTable().getValueAt(selectedRow, 0).toString();
+
+        String[] fullRow = employeeRepo.findRowByEmployeeNo(employeeId);
+        if (fullRow == null) {
+            JOptionPane.showMessageDialog(this, "❌ Employee record not found.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        String[] editableFields = {
+                "Last Name", "First Name", "Birthday", "Address", "Phone Number",
+                "SSS #", "Philhealth #", "TIN #", "Pag-ibig #", "Status", "Position",
+                "Immediate Supervisor", "Basic Salary", "Rice Subsidy", "Phone Allowance",
+                "Clothing Allowance", "Gross Semi-monthly Rate", "Hourly Rate"
+        };
+
+        java.util.List<String> headers = employeeRepo.getHeaders();
+
+        JPanel panel = new JPanel(new SpringLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2d = (Graphics2D) g;
+                g2d.setPaint(new GradientPaint(0, 0, gradientStart, 0, getHeight(), gradientEnd));
+                g2d.fillRect(0, 0, getWidth(), getHeight());
+            }
+        };
+
+        // Employee ID locked
+        JLabel lblId = new JLabel("Employee ID *:");
+        lblId.setForeground(Color.RED);
+        JTextField txtId = new JTextField(employeeId, 20);
+        txtId.setEditable(false);
+        txtId.setBackground(new Color(240, 240, 240));
+        panel.add(lblId);
+        panel.add(txtId);
+
+        int statusIndex = headers.indexOf("Status");
+        boolean isRegular = statusIndex != -1 &&
+                statusIndex < fullRow.length &&
+                fullRow[statusIndex].equalsIgnoreCase("Regular");
+
+        JTextField[] textFields = new JTextField[editableFields.length];
+        String[] originalValues = new String[editableFields.length];
+
+        for (int i = 0; i < editableFields.length; i++) {
+
+            String field = editableFields[i];
+            int idx = headers.indexOf(field);
+
+            boolean locked = isRegular && (
+                    field.equals("Basic Salary") ||
+                    field.equals("Rice Subsidy") ||
+                    field.equals("Phone Allowance") ||
+                    field.equals("Clothing Allowance") ||
+                    field.equals("Gross Semi-monthly Rate") ||
+                    field.equals("Hourly Rate")
+            );
+
+            JLabel label = new JLabel(locked ? field + " *" : field + ":");
+            if (locked) label.setForeground(Color.RED);
+
+            JTextField tf = new JTextField(20);
+            tf.setEditable(!locked);
+
+            if (idx != -1 && idx < fullRow.length) {
+                tf.setText(fullRow[idx]);
+                originalValues[i] = fullRow[idx];
+            } else {
+                originalValues[i] = "";
+            }
+
+            if (locked) {
+                tf.setBackground(new Color(240, 240, 240));
+                tf.setToolTipText("🔒 Locked for Regular employees.");
+            }
+
+            panel.add(label);
+            panel.add(tf);
+            textFields[i] = tf;
+            }
+
+            JLabel note = new JLabel("* Locked field — cannot be edited.");
+            note.setForeground(Color.RED);
+            panel.add(note);
+            panel.add(new JLabel());
+
+            SpringUtilities.makeCompactGrid(panel,
+                    editableFields.length + 2, 2,
+                    10, 10, 10, 10);
+
+            JDialog dialog = new JDialog(
+                    (Frame) SwingUtilities.getWindowAncestor(this),
+                    "Update Employee", true);
+
+            dialog.setSize(650, 750);
+            dialog.setLocationRelativeTo(this);
+            dialog.setLayout(new BorderLayout());
+            dialog.add(new JScrollPane(panel), BorderLayout.CENTER);
+
+            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            buttonPanel.setOpaque(false);
+
+            JButton saveBtn = new JButton("Save");
+            styleMinimalButton(saveBtn, 120, 36);
+
+            saveBtn.addActionListener(evt -> {
+
+                boolean anyChanged = false;
+
+                for (int i = 0; i < editableFields.length; i++) {
+                    JTextField tf = textFields[i];
+                    if (!tf.isEditable()) continue;
+
+                    String newVal = tf.getText().trim();
+                    String oldVal = originalValues[i] == null ? "" : originalValues[i];
+
+                    if (!newVal.equals(oldVal)) {
+                        boolean ok = employeeRepo.updateField(employeeId, editableFields[i], newVal);
+                        anyChanged |= ok;
+                    }
+                }
+
+                if (anyChanged) {
+                    showCustomMessage("Employee record updated successfully.", "Updated");
+                    refreshEmployeeTable();
+                } else {
+                    showCustomMessage("No changes were made.", "Message");
+                }
+
+                dialog.dispose();
+            });
+
+            JButton cancelBtn = new JButton("Cancel");
+            styleColoredButton(cancelBtn, Color.GRAY, 100, 36);
+            cancelBtn.addActionListener(evt -> dialog.dispose());
+
+            buttonPanel.add(saveBtn);
+            buttonPanel.add(cancelBtn);
+
+            dialog.add(buttonPanel, BorderLayout.SOUTH);
+            dialog.setVisible(true);
+        }
+           private void showDeleteDialog() {
+
+        int selectedRow = dashboardTable.getTable().getSelectedRow();
+        if (selectedRow == -1) {
+            showCustomMessage("Please select an employee to delete.", "Message");
+            return;
+        }
+
+        selectedRow = dashboardTable.getTable().convertRowIndexToModel(selectedRow);
+        String employeeId = dashboardTable.getTable().getValueAt(selectedRow, 0).toString();
+
+        JDialog dialog = new JDialog(
+                (Frame) SwingUtilities.getWindowAncestor(this),
+                "Warning", true);
+
+        dialog.setSize(400, 180);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout());
+
+        JPanel content = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2d = (Graphics2D) g;
+                g2d.setPaint(new GradientPaint(0, 0, gradientStart, 0, getHeight(), gradientEnd));
+                g2d.fillRect(0, 0, getWidth(), getHeight());
+            }
+        };
+
+        content.setBorder(new EmptyBorder(20, 20, 20, 20));
+        content.setLayout(new BorderLayout(10, 10));
+
+        JLabel message = new JLabel(
+                "<html><center>Are you sure you want to delete<br>employee ID <b>" + employeeId + "</b>?</center></html>",
+                JLabel.CENTER);
+
+        message.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        content.add(message, BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 10));
+        buttonPanel.setOpaque(false);
+
+        JButton yesButton = new JButton("Yes");
+        styleColoredButton(yesButton, new Color(220, 20, 60), 80, 36);
+
+        yesButton.addActionListener(ev -> {
+            boolean ok = employeeRepo.deleteByEmployeeNo(employeeId);
+            if (ok) {
+                refreshEmployeeTable();
+                showCustomMessage("Record Deleted Successfully", "Deleted");
+            } else {
+                showCustomMessage("Failed to delete record.", "Error");
+            }
+            dialog.dispose();
+        });
+
+        JButton noButton = new JButton("No");
+        styleColoredButton(noButton, Color.GRAY, 80, 36);
+        noButton.addActionListener(ev -> dialog.dispose());
+
+        buttonPanel.add(yesButton);
+        buttonPanel.add(noButton);
+
+        content.add(buttonPanel, BorderLayout.SOUTH);
+
+        dialog.setContentPane(content);
+        dialog.setVisible(true);
+    }
     // ---------------- Message UI ----------------
     private void showCustomMessage(String message, String title) {
         JDialog customDialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), title, true);
