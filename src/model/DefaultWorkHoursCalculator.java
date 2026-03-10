@@ -1,14 +1,13 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package model;
 
 import java.time.Duration;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Objects;
 
 public class DefaultWorkHoursCalculator implements WorkHoursCalculator {
+
+    private static final int LUNCH_BREAK_MINUTES = 60;
 
     private final OvertimePolicy overtimePolicy;
 
@@ -18,45 +17,105 @@ public class DefaultWorkHoursCalculator implements WorkHoursCalculator {
 
     @Override
     public WorkHoursSummary summarize(List<AttendanceLog> logs) {
-        int totalMinutes = 0;
-        int totalLate = 0;
-        int totalOT = 0;
+        int totalWorkedMinutes = 0;
+        int totalLateMinutes = 0;
+        int totalOvertimeMinutes = 0;
 
-        if (logs == null) return new WorkHoursSummary(0, 0, 0);
-
-        for (AttendanceLog log : logs) {
-            if (log == null || log.getTimeIn() == null || log.getTimeOut() == null) continue;
-
-            totalMinutes += computeMinutesWorked(log);
-            totalLate += computeLateMinutes(log);
-            totalOT += computeOvertimeMinutes(log); // OT suppressed if late (policy)
+        if (logs == null || logs.isEmpty()) {
+            return new WorkHoursSummary(0, 0, 0);
         }
 
-        return new WorkHoursSummary(totalMinutes, totalLate, totalOT);
+        for (AttendanceLog log : logs) {
+            if (!isComputable(log)) {
+                continue;
+            }
+
+            totalWorkedMinutes += computeMinutesWorked(log);
+            totalLateMinutes += computeLateMinutes(log);
+            totalOvertimeMinutes += computeOvertimeMinutes(log);
+        }
+
+        return new WorkHoursSummary(
+                totalWorkedMinutes,
+                totalLateMinutes,
+                totalOvertimeMinutes
+        );
     }
 
     @Override
     public int computeMinutesWorked(AttendanceLog log) {
-        int minutes = (int) Duration.between(log.getTimeIn(), log.getTimeOut()).toMinutes();
-        // subtract lunch break (1 hour)
-        return Math.max(minutes - 60, 0);
+        if (!hasCompleteTime(log)) {
+            return 0;
+        }
+
+        LocalTime timeIn = log.getTimeIn();
+        LocalTime timeOut = log.getTimeOut();
+
+        if (!timeOut.isAfter(timeIn)) {
+            return 0;
+        }
+
+        int rawMinutesWorked = (int) Duration.between(timeIn, timeOut).toMinutes();
+        int netMinutesWorked = rawMinutesWorked - LUNCH_BREAK_MINUTES;
+
+        return Math.max(netMinutesWorked, 0);
     }
 
     @Override
     public int computeLateMinutes(AttendanceLog log) {
-        if (!overtimePolicy.isLate(log)) return 0;
-        return (int) Duration.between(overtimePolicy.getGraceTime(), log.getTimeIn()).toMinutes();
+        if (log == null || log.getTimeIn() == null) {
+            return 0;
+        }
+
+        if (!overtimePolicy.isLate(log)) {
+            return 0;
+        }
+
+        LocalTime graceTime = overtimePolicy.getGraceTime();
+        LocalTime actualTimeIn = log.getTimeIn();
+
+        if (graceTime == null || actualTimeIn == null) {
+            return 0;
+        }
+
+        if (!actualTimeIn.isAfter(graceTime)) {
+            return 0;
+        }
+
+        return (int) Duration.between(graceTime, actualTimeIn).toMinutes();
     }
 
     @Override
     public int computeOvertimeMinutes(AttendanceLog log) {
-        // ✅ Your rule: if late, no overtime
-        if (!overtimePolicy.isOvertimeAllowed(log)) return 0;
-
-        if (log.getTimeOut().isAfter(overtimePolicy.getWorkEndTime())) {
-            return (int) Duration.between(overtimePolicy.getWorkEndTime(), log.getTimeOut()).toMinutes();
+        if (!hasCompleteTime(log)) {
+            return 0;
         }
-        return 0;
+
+        if (!overtimePolicy.isOvertimeAllowed(log)) {
+            return 0;
+        }
+
+        LocalTime workEndTime = overtimePolicy.getWorkEndTime();
+        LocalTime actualTimeOut = log.getTimeOut();
+
+        if (workEndTime == null || actualTimeOut == null) {
+            return 0;
+        }
+
+        if (!actualTimeOut.isAfter(workEndTime)) {
+            return 0;
+        }
+
+        return (int) Duration.between(workEndTime, actualTimeOut).toMinutes();
+    }
+
+    private boolean isComputable(AttendanceLog log) {
+        return log != null && hasCompleteTime(log);
+    }
+
+    private boolean hasCompleteTime(AttendanceLog log) {
+        return log != null
+                && log.getTimeIn() != null
+                && log.getTimeOut() != null;
     }
 }
-

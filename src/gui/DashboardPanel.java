@@ -1,5 +1,11 @@
 package gui;
 
+import service.AuthService;
+import service.AuthenticatedUser;
+import service.UserAccountService;
+import service.EmployeeService;
+import service.LeaveService;
+
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
@@ -7,34 +13,36 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.net.URL;
 
-import model.Role;
-import model.User;
-
-import repository.EmployeeRepository;
-import repository.FileEmployeeRepository;
-import repository.CredentialRepository;
-import repository.FileCredentialRepository;
-
 public class DashboardPanel extends JFrame {
 
     private final CardLayout cardLayout = new CardLayout();
-    private JPanel contentPanel;
+    private final JPanel contentPanel;
 
-    // Panels
-    private final EmployeeManagementPanel employeePanel = new EmployeeManagementPanel();
+    private final AuthenticatedUser currentUser;
+    private final AuthService authService;
+    private final EmployeeService employeeService;
+    private final UserAccountService userAccountService;
+    private final LeaveService leaveService;
 
+    private final EmployeeManagementPanel employeePanel;
     private final LeaveRequestPanel leaveRequestPanel;
     private final LeaveApprovalPanel leaveApprovalPanel;
     private final EmployeeLeaveHistoryPanel leaveHistoryPanel;
-
-    // IT-only panel
     private final UserAccountsPanel userAccountsPanel;
 
-    // Repositories (shared)
-    private final EmployeeRepository employeeRepo;
-    private final CredentialRepository credentialRepo;
+    public DashboardPanel(
+            AuthenticatedUser currentUser,
+            AuthService authService,
+            EmployeeService employeeService,
+            UserAccountService userAccountService,
+            LeaveService leaveService
+    ) {
+        this.currentUser = currentUser;
+        this.authService = authService;
+        this.employeeService = employeeService;
+        this.userAccountService = userAccountService;
+        this.leaveService = leaveService;
 
-    public DashboardPanel(User user) {
         setTitle("MotorPH Dashboard");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(1000, 650);
@@ -42,62 +50,25 @@ public class DashboardPanel extends JFrame {
         setLayout(new BorderLayout());
         setMinimumSize(new Dimension(800, 500));
 
-        // Theme
         Color sidebarColor = Color.WHITE;
-        Color gradientStart = new Color(255, 204, 229); 
+        Color gradientStart = new Color(255, 204, 229);
         Color gradientEnd = new Color(255, 229, 180);
         Font boldFont = new Font("Segoe UI", Font.BOLD, 16);
         Font regularFont = new Font("Segoe UI", Font.PLAIN, 14);
 
-        // ✅ Repositories instead of FileHandler
-        employeeRepo = new FileEmployeeRepository();
-        credentialRepo = new FileCredentialRepository();
+        this.employeePanel = new EmployeeManagementPanel(employeeService, currentUser);
+        this.leaveRequestPanel = new LeaveRequestPanel(leaveService, currentUser);
+        this.leaveApprovalPanel = new LeaveApprovalPanel(leaveService, currentUser);
+        this.leaveHistoryPanel = new EmployeeLeaveHistoryPanel(leaveService, currentUser);
+        this.userAccountsPanel = new UserAccountsPanel(userAccountService, employeeService);
 
-        // Load employee repo once so panels can read cached headers/rows fast
-        employeeRepo.load();
-
-        // Panels that need user
-        leaveRequestPanel = new LeaveRequestPanel(user);
-        leaveApprovalPanel = new LeaveApprovalPanel(user);
-        leaveHistoryPanel = new EmployeeLeaveHistoryPanel(user);
-
-        // ✅ IT-only panel uses repositories
-        // If your UserAccountsPanel doesn't have this constructor yet, update it.
-        userAccountsPanel = new UserAccountsPanel(credentialRepo, employeeRepo);
-
-        // Apply access rules in EmployeeManagementPanel
-        employeePanel.applyAccess(user);
-
-        // Sidebar
         JPanel sidebar = new JPanel(new BorderLayout());
         sidebar.setBackground(sidebarColor);
         sidebar.setPreferredSize(new Dimension(280, getHeight()));
         sidebar.setBorder(new EmptyBorder(20, 20, 20, 20));
 
-        // Profile panel
-        JPanel profilePanel = new JPanel(new BorderLayout(10, 0));
-        profilePanel.setBackground(sidebarColor);
+        JPanel profilePanel = buildProfilePanel(sidebarColor, boldFont, regularFont);
 
-        JLabel profileIcon = new JLabel(loadImageIcon("/assets/userprofile.png", 40, 40));
-        profilePanel.add(profileIcon, BorderLayout.WEST);
-
-        JPanel namePanel = new JPanel();
-        namePanel.setLayout(new BoxLayout(namePanel, BoxLayout.Y_AXIS));
-        namePanel.setBackground(sidebarColor);
-
-        JLabel userName = new JLabel(user.getFirstName());
-        JLabel userRole = new JLabel(user.getPosition());
-
-        userName.setFont(boldFont);
-        userRole.setFont(regularFont);
-        userRole.setForeground(Color.GRAY);
-
-        namePanel.add(userName);
-        namePanel.add(userRole);
-
-        profilePanel.add(namePanel, BorderLayout.CENTER);
-
-        // Nav panel
         JPanel navPanel = new JPanel();
         navPanel.setLayout(new BoxLayout(navPanel, BoxLayout.Y_AXIS));
         navPanel.setBackground(sidebarColor);
@@ -110,7 +81,6 @@ public class DashboardPanel extends JFrame {
         generalLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         navPanel.add(generalLabel);
 
-        // Content panel with gradient
         contentPanel = new JPanel(cardLayout) {
             @Override
             protected void paintComponent(Graphics g) {
@@ -121,16 +91,12 @@ public class DashboardPanel extends JFrame {
             }
         };
 
-        // Add panels that are always available
         contentPanel.add(leaveRequestPanel, "LeaveRequest");
         contentPanel.add(leaveHistoryPanel, "LeaveHistory");
 
-        Role role = user.getRole();
+        String role = roleName(currentUser);
 
-        // ============ ROLE-BASED MENU ============
-
-        // EMPLOYEE + HRADMIN: Employee page
-        if (role == Role.EMPLOYEE || role == Role.HRADMIN || role == Role.HR) {
+        if (isEmployeeModuleAllowed(role)) {
             JButton employeeBtn = createNavButton("Employee", "employee.png");
             navPanel.add(employeeBtn);
             navPanel.add(Box.createVerticalStrut(5));
@@ -139,14 +105,12 @@ public class DashboardPanel extends JFrame {
             employeeBtn.addActionListener(e -> cardLayout.show(contentPanel, "Employee"));
         }
 
-        // Leave Request (ALL roles)
         JButton leaveRequestBtn = createNavButton("Leave Request", "employee.png");
         navPanel.add(leaveRequestBtn);
         navPanel.add(Box.createVerticalStrut(5));
         leaveRequestBtn.addActionListener(e -> cardLayout.show(contentPanel, "LeaveRequest"));
 
-        // HRADMIN: Leave Approvals
-        if (role == Role.HRADMIN) {
+        if (isLeaveApprovalAllowed(role)) {
             JButton leaveApprovalsBtn = createNavButton("Leave Approvals", "employee.png");
             navPanel.add(leaveApprovalsBtn);
             navPanel.add(Box.createVerticalStrut(5));
@@ -155,14 +119,12 @@ public class DashboardPanel extends JFrame {
             leaveApprovalsBtn.addActionListener(e -> cardLayout.show(contentPanel, "LeaveApprovals"));
         }
 
-        // My Leaves (ALL roles)
         JButton leaveHistoryBtn = createNavButton("My Leaves", "employee.png");
         navPanel.add(leaveHistoryBtn);
         navPanel.add(Box.createVerticalStrut(5));
         leaveHistoryBtn.addActionListener(e -> cardLayout.show(contentPanel, "LeaveHistory"));
 
-        // IT: User Accounts ONLY (plus Leave Request + My Leaves)
-        if (role == Role.IT) {
+        if (isUserAccountsAllowed(role)) {
             JButton userAccountsBtn = createNavButton("User Accounts", "employee.png");
             navPanel.add(userAccountsBtn);
             navPanel.add(Box.createVerticalStrut(5));
@@ -171,12 +133,11 @@ public class DashboardPanel extends JFrame {
             userAccountsBtn.addActionListener(e -> cardLayout.show(contentPanel, "UserAccounts"));
         }
 
-        // Logout
         JButton logoutButton = createNavButton("Log-out", "logout.png");
         logoutButton.setForeground(Color.GRAY);
         logoutButton.addActionListener(e -> {
             dispose();
-            SwingUtilities.invokeLater(() -> new LoginPanel().setVisible(true));
+            SwingUtilities.invokeLater(() -> new LoginPanel(authService).setVisible(true));
         });
 
         sidebar.add(profilePanel, BorderLayout.NORTH);
@@ -186,14 +147,64 @@ public class DashboardPanel extends JFrame {
         add(sidebar, BorderLayout.WEST);
         add(contentPanel, BorderLayout.CENTER);
 
-        // ============ DEFAULT LANDING PAGE ============
-        if (role == Role.IT) {
-            cardLayout.show(contentPanel, "UserAccounts");
-        } else {
-            cardLayout.show(contentPanel, "Employee");
-        }
+        showDefaultPage(role);
 
         setVisible(true);
+    }
+
+    private JPanel buildProfilePanel(Color sidebarColor, Font boldFont, Font regularFont) {
+        JPanel profilePanel = new JPanel(new BorderLayout(10, 0));
+        profilePanel.setBackground(sidebarColor);
+
+        JLabel profileIcon = new JLabel(loadImageIcon("/assets/userprofile.png", 40, 40));
+        profilePanel.add(profileIcon, BorderLayout.WEST);
+
+        JPanel namePanel = new JPanel();
+        namePanel.setLayout(new BoxLayout(namePanel, BoxLayout.Y_AXIS));
+        namePanel.setBackground(sidebarColor);
+
+        JLabel userName = new JLabel(safe(currentUser.getFirstName(), "(Unknown)"));
+        JLabel userRole = new JLabel(safe(currentUser.getPosition(), "(Unknown)"));
+
+        userName.setFont(boldFont);
+        userRole.setFont(regularFont);
+        userRole.setForeground(Color.GRAY);
+
+        namePanel.add(userName);
+        namePanel.add(userRole);
+
+        profilePanel.add(namePanel, BorderLayout.CENTER);
+        return profilePanel;
+    }
+
+    private void showDefaultPage(String role) {
+        if (isUserAccountsAllowed(role)) {
+            cardLayout.show(contentPanel, "UserAccounts");
+        } else if (isEmployeeModuleAllowed(role)) {
+            cardLayout.show(contentPanel, "Employee");
+        } else {
+            cardLayout.show(contentPanel, "LeaveRequest");
+        }
+    }
+
+    private boolean isEmployeeModuleAllowed(String role) {
+        return "EMPLOYEE".equals(role) || "HRADMIN".equals(role) || "HR".equals(role);
+    }
+
+    private boolean isLeaveApprovalAllowed(String role) {
+        return "HRADMIN".equals(role);
+    }
+
+    private boolean isUserAccountsAllowed(String role) {
+        return "IT".equals(role);
+    }
+
+    private String roleName(AuthenticatedUser user) {
+        return user == null || user.getRole() == null ? "" : user.getRole().name();
+    }
+
+    private String safe(String value, String fallback) {
+        return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
 
     private JButton createNavButton(String text, String iconFileName) {
@@ -216,6 +227,7 @@ public class DashboardPanel extends JFrame {
             public void mouseEntered(MouseEvent e) {
                 button.setBackground(new Color(240, 240, 240));
             }
+
             @Override
             public void mouseExited(MouseEvent e) {
                 button.setBackground(Color.WHITE);
