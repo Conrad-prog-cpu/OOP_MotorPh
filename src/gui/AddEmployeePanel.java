@@ -2,68 +2,125 @@ package gui;
 
 import com.github.lgooddatepicker.components.DatePicker;
 import com.github.lgooddatepicker.components.DatePickerSettings;
-import model.Employee;
-import model.ProbationaryEmployee;
-import model.RegularEmployee;
-import repository.EmployeeRepository;
-import repository.FileEmployeeRepository;
+import service.EmployeeCreateRequest;
+import service.EmployeeService;
+import service.EmployeeValidationResult;
+import service.EmployeeValidator;
 
 import javax.swing.*;
+import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
-import javax.swing.text.*;
+import javax.swing.text.AbstractDocument;
+import javax.swing.text.AttributeSet;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DocumentFilter;
 import java.awt.*;
-import java.awt.event.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
+import java.awt.event.MouseEvent;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.*;
+import java.util.LinkedHashMap;
 import java.util.List;
-import javax.swing.border.Border;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 public class AddEmployeePanel extends JPanel {
 
-    private final EmployeeRepository employeeRepo;
-    private final Runnable onEmployeeAdded; // callback after successful save
-
-    private final Map<String, JComponent> fields = new LinkedHashMap<>();
-
-    private final JButton submitButton = new JButton("Add Employee");
-    private final JButton backButton   = new JButton("Back");
-
-    private final JPanel formPanel = new JPanel(new GridLayout(0, 2, 10, 10));
-
-    private static final String[] EXTRA_FIELDS = {"Birthday", "Phone Number"};
-
     private static final Color GRADIENT_START = new Color(0xFFD1DC);
-    private static final Color GRADIENT_END   = new Color(0xFFE4CC);
+    private static final Color GRADIENT_END = new Color(0xFFE4CC);
 
     private static final Border DEFAULT_BORDER = UIManager.getBorder("TextField.border");
     private static final Border ERROR_BORDER = new LineBorder(Color.RED, 2);
 
-    public AddEmployeePanel(EmployeeRepository employeeRepo, Runnable onEmployeeAdded) {
-        this.employeeRepo = employeeRepo;
+    private static final String EMPLOYEE_ID = "Employee #";
+    private static final String LAST_NAME = "Last Name";
+    private static final String FIRST_NAME = "First Name";
+    private static final String BIRTHDAY = "Birthday";
+    private static final String ADDRESS = "Address";
+    private static final String PHONE_NUMBER = "Phone Number";
+    private static final String SSS = "SSS #";
+    private static final String PHILHEALTH = "Philhealth #";
+    private static final String TIN = "TIN #";
+    private static final String PAG_IBIG = "Pag-ibig #";
+    private static final String STATUS = "Status";
+    private static final String POSITION = "Position";
+    private static final String IMMEDIATE_SUPERVISOR = "Immediate Supervisor";
+    private static final String BASIC_SALARY = "Basic Salary";
+    private static final String RICE_SUBSIDY = "Rice Subsidy";
+    private static final String PHONE_ALLOWANCE = "Phone Allowance";
+    private static final String CLOTHING_ALLOWANCE = "Clothing Allowance";
+    private static final String GROSS_SEMI_MONTHLY_RATE = "Gross Semi-monthly Rate";
+    private static final String HOURLY_RATE = "Hourly Rate";
+
+    private static final String[] FORM_HEADERS = {
+            EMPLOYEE_ID,
+            LAST_NAME,
+            FIRST_NAME,
+            BIRTHDAY,
+            ADDRESS,
+            PHONE_NUMBER,
+            SSS,
+            PHILHEALTH,
+            TIN,
+            PAG_IBIG,
+            STATUS,
+            POSITION,
+            IMMEDIATE_SUPERVISOR,
+            BASIC_SALARY,
+            RICE_SUBSIDY,
+            PHONE_ALLOWANCE,
+            CLOTHING_ALLOWANCE,
+            GROSS_SEMI_MONTHLY_RATE,
+            HOURLY_RATE
+    };
+
+    private static final Set<String> REQUIRED_FIELDS = Set.of(
+            EMPLOYEE_ID,
+            LAST_NAME,
+            FIRST_NAME,
+            BIRTHDAY,
+            PHONE_NUMBER,
+            SSS,
+            PHILHEALTH,
+            TIN,
+            PAG_IBIG
+    );
+
+    private static final Set<String> NUMERIC_FIELDS = Set.of(
+            EMPLOYEE_ID,
+            PHONE_NUMBER,
+            SSS,
+            PHILHEALTH,
+            TIN,
+            PAG_IBIG
+    );
+
+    private final EmployeeService employeeService;
+    private final Runnable onEmployeeAdded;
+
+    private final Map<String, JComponent> fields = new LinkedHashMap<>();
+
+    private final JButton submitButton = new JButton("Add Employee");
+    private final JButton backButton = new JButton("Back");
+    private final JPanel formPanel = new JPanel(new GridLayout(0, 2, 10, 10));
+
+    public AddEmployeePanel(EmployeeService employeeService, Runnable onEmployeeAdded) {
+        this.employeeService = Objects.requireNonNull(employeeService, "employeeService is required");
         this.onEmployeeAdded = onEmployeeAdded;
 
         setOpaque(false);
         setLayout(new BorderLayout(10, 10));
         setBorder(new EmptyBorder(20, 20, 20, 20));
 
-        employeeRepo.load();
-
         formPanel.setOpaque(false);
 
-        LinkedHashMap<String, Boolean> headers = buildFinalHeaders();
-
-        for (Map.Entry<String, Boolean> entry : headers.entrySet()) {
-            String header = entry.getKey();
-            boolean required = entry.getValue();
-
-            formPanel.add(buildLabelCell(header, required));
-            JComponent input = buildInputFor(header);
-            formPanel.add(input);
-
-            fields.put(header, input);
-        }
+        buildForm();
+        styleButtons();
+        wireEvents();
 
         JPanel formContainer = new JPanel(new BorderLayout());
         formContainer.setOpaque(false);
@@ -76,9 +133,6 @@ public class AddEmployeePanel extends JPanel {
         scrollPane.getViewport().setOpaque(false);
         scrollPane.setBorder(null);
 
-        styleButtons();
-        wireEvents();
-
         JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
         bottom.setOpaque(false);
         bottom.setBorder(new EmptyBorder(10, 10, 10, 10));
@@ -90,12 +144,16 @@ public class AddEmployeePanel extends JPanel {
         add(bottom, BorderLayout.SOUTH);
     }
 
-    // Convenience constructor
-    public AddEmployeePanel(Runnable onEmployeeAdded) {
-        this(new FileEmployeeRepository(), onEmployeeAdded);
-    }
+    private void buildForm() {
+        for (String header : FORM_HEADERS) {
+            formPanel.add(buildLabelCell(header, isRequired(header)));
 
-    // ---------------- UI building ----------------
+            JComponent input = buildInputFor(header);
+            formPanel.add(input);
+
+            fields.put(header, input);
+        }
+    }
 
     private JPanel buildLabelCell(String header, boolean required) {
         JPanel labelPanel = new JPanel(new BorderLayout());
@@ -107,6 +165,7 @@ public class AddEmployeePanel extends JPanel {
             JLabel asterisk = new JLabel("*");
             asterisk.setForeground(Color.RED);
             asterisk.setFont(asterisk.getFont().deriveFont(Font.BOLD));
+
             label.setFont(label.getFont().deriveFont(Font.BOLD));
             label.setToolTipText("Required field");
 
@@ -122,14 +181,14 @@ public class AddEmployeePanel extends JPanel {
     }
 
     private JComponent buildInputFor(String header) {
-        String h = header.trim().toLowerCase();
+        String normalized = header.trim().toLowerCase();
 
-        switch (h) {
+        switch (normalized) {
             case "employee #" -> {
-                JTextField tf = new JTextField();
-                restrictNumeric(tf);
-                addTooltipOnFocus(tf, "Numbers only");
-                return tf;
+                JTextField textField = new JTextField();
+                restrictNumeric(textField);
+                addTooltipOnFocus(textField, "Numbers only");
+                return textField;
             }
             case "birthday" -> {
                 DatePickerSettings settings = new DatePickerSettings();
@@ -140,10 +199,10 @@ public class AddEmployeePanel extends JPanel {
                 return picker;
             }
             case "phone number", "sss #", "philhealth #", "tin #", "pag-ibig #" -> {
-                JTextField tf = new JTextField();
-                restrictNumeric(tf);
-                addTooltipOnFocus(tf, "Numbers only");
-                return tf;
+                JTextField textField = new JTextField();
+                restrictNumeric(textField);
+                addTooltipOnFocus(textField, "Numbers only");
+                return textField;
             }
             case "status" -> {
                 return new JComboBox<>(new String[]{"Regular", "Probationary"});
@@ -154,295 +213,228 @@ public class AddEmployeePanel extends JPanel {
         }
     }
 
-    private void styleButtons() {
-        styleRoundedButton(submitButton, Color.BLACK, 140, 38);
-        styleRoundedButton(backButton, Color.BLACK, 90, 38);
-    }
-
     private void wireEvents() {
         submitButton.addActionListener(this::onSubmit);
         backButton.addActionListener(e -> closeWindow());
     }
 
-    private void styleRoundedButton(JButton button, Color bg, int w, int h) {
-        button.setPreferredSize(new Dimension(w, h));
-        button.setForeground(Color.WHITE);
-        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        button.setFocusPainted(false);
-        button.setContentAreaFilled(false);
-        button.setBorderPainted(false);
-        button.setOpaque(false);
-        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-
-        button.setUI(new javax.swing.plaf.basic.BasicButtonUI() {
-            @Override
-            public void paint(Graphics g, JComponent c) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(bg);
-                g2.fillRoundRect(0, 0, c.getWidth(), c.getHeight(), 20, 20);
-                super.paint(g2, c);
-                g2.dispose();
-            }
-        });
-    }
-
-    // ---------------- Background ----------------
-
-    @Override
-    protected void paintComponent(Graphics g) {
-        super.paintComponent(g);
-        Graphics2D g2 = (Graphics2D) g.create();
-        GradientPaint gp = new GradientPaint(0, 0, GRADIENT_START, 0, getHeight(), GRADIENT_END);
-        g2.setPaint(gp);
-        g2.fillRect(0, 0, getWidth(), getHeight());
-        g2.dispose();
-    }
-
-    // ---------------- Submit flow ----------------
-
-    private void onSubmit(ActionEvent e) {
+    private void onSubmit(ActionEvent event) {
         resetBorders();
 
-        Map<String, String> values = collectValues();
+        EmployeeCreateRequest request = buildCreateRequestFromForm();
 
-        List<String> errors = validate(values);
-        if (!errors.isEmpty()) {
-            JOptionPane.showMessageDialog(this,
-                    "Please fix the following:\n" + String.join("\n", errors),
-                    "Validation Error",
-                    JOptionPane.ERROR_MESSAGE);
+        EmployeeValidationResult validationResult = EmployeeValidator.validateForCreate(request);
+        if (!validationResult.isValid()) {
+            markErrors(validationResult);
+            showValidationMessages(validationResult.getMessages());
             return;
         }
 
-        String employeeId = values.getOrDefault("Employee #", "").trim();
-        if (employeeExists(employeeId)) {
-            setError("Employee #");
-            JOptionPane.showMessageDialog(this,
+        String employeeId = safe(request.getEmployeeId());
+        if (employeeService.existsByEmployeeId(employeeId)) {
+            setError(EMPLOYEE_ID);
+            JOptionPane.showMessageDialog(
+                    this,
                     "Employee # already exists!",
                     "Duplicate Error",
-                    JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
         }
 
-        Employee emp = buildEmployee(values);
+        boolean added = employeeService.addEmployee(request);
 
-        boolean ok = employeeRepo.addEmployee(emp);
-        if (!ok) {
-            JOptionPane.showMessageDialog(this,
-                    "❌ Failed to add employee.",
+        if (!added) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Failed to add employee.",
                     "Error",
-                    JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
         }
 
-        employeeRepo.load(); // refresh cache for any future reads
-
-        JOptionPane.showMessageDialog(this, "✅ Employee added successfully!");
+        JOptionPane.showMessageDialog(this, "Employee added successfully.");
         clearFields();
 
-        if (onEmployeeAdded != null) onEmployeeAdded.run();
+        if (onEmployeeAdded != null) {
+            onEmployeeAdded.run();
+        }
 
         closeWindow();
     }
 
-    // ---------------- Values & Validation ----------------
+    private EmployeeCreateRequest buildCreateRequestFromForm() {
+        Map<String, String> values = collectValues();
 
-    private Map<String, String> collectValues() {
-        Map<String, String> out = new HashMap<>();
-
-        for (Map.Entry<String, JComponent> entry : fields.entrySet()) {
-            String header = entry.getKey();
-            JComponent c = entry.getValue();
-
-            String value = "";
-
-            if (c instanceof JTextField tf) {
-                value = tf.getText().trim();
-            } else if (c instanceof DatePicker dp) {
-                value = dp.getDate() != null ? dp.getDate().toString() : "";
-            } else if (c instanceof JComboBox<?> cb) {
-                value = Objects.toString(cb.getSelectedItem(), "").trim();
-            }
-
-            out.put(header, value);
-        }
-
-        return out;
-    }
-
-    private List<String> validate(Map<String, String> values) {
-        List<String> errors = new ArrayList<>();
-
-        for (String header : fields.keySet()) {
-            String val = values.getOrDefault(header, "").trim();
-
-            if (isRequired(header) && val.isEmpty()) {
-                setError(header);
-                errors.add("- " + header + " is required.");
-                continue;
-            }
-
-            if (isNumericField(header) && !val.isEmpty() && !val.matches("\\d+")) {
-                setError(header);
-                errors.add("- " + header + " must be numeric.");
-            }
-        }
-
-        return errors;
-    }
-
-    private Employee buildEmployee(Map<String, String> v) {
-        String employeeId = v.getOrDefault("Employee #", "");
-        String status = v.getOrDefault("Status", "Regular");
-        LocalDate birthday = parseDate(v.get("Birthday"));
-
-        BigDecimal basicSalary     = money(v.get("Basic Salary"));
-        BigDecimal riceSubsidy     = money(v.get("Rice Subsidy"));
-        BigDecimal phoneAllowance  = money(v.get("Phone Allowance"));
-        BigDecimal clothingAllow   = money(v.get("Clothing Allowance"));
-        BigDecimal semiMonthlyRate = money(v.get("Gross Semi-monthly Rate"));
-        BigDecimal hourlyRate      = money(v.get("Hourly Rate"));
-
-        if ("Probationary".equalsIgnoreCase(status)) {
-            return new ProbationaryEmployee(
-                    employeeId,
-                    v.getOrDefault("Last Name", ""),
-                    v.getOrDefault("First Name", ""),
-                    birthday,
-                    v.getOrDefault("Address", ""),
-                    v.getOrDefault("Phone Number", ""),
-                    v.getOrDefault("SSS #", ""),
-                    v.getOrDefault("Philhealth #", ""),
-                    v.getOrDefault("TIN #", ""),
-                    v.getOrDefault("Pag-ibig #", ""),
-                    status,
-                    v.getOrDefault("Position", ""),
-                    v.getOrDefault("Immediate Supervisor", ""),
-                    basicSalary, riceSubsidy, phoneAllowance, clothingAllow, semiMonthlyRate, hourlyRate
-            );
-        }
-
-        return new RegularEmployee(
-                employeeId,
-                v.getOrDefault("Last Name", ""),
-                v.getOrDefault("First Name", ""),
-                birthday,
-                v.getOrDefault("Address", ""),
-                v.getOrDefault("Phone Number", ""),
-                v.getOrDefault("SSS #", ""),
-                v.getOrDefault("Philhealth #", ""),
-                v.getOrDefault("TIN #", ""),
-                v.getOrDefault("Pag-ibig #", ""),
-                status,
-                v.getOrDefault("Position", ""),
-                v.getOrDefault("Immediate Supervisor", ""),
-                basicSalary, riceSubsidy, phoneAllowance, clothingAllow, semiMonthlyRate, hourlyRate
+        return new EmployeeCreateRequest(
+                values.getOrDefault(EMPLOYEE_ID, "").trim(),
+                values.getOrDefault(LAST_NAME, "").trim(),
+                values.getOrDefault(FIRST_NAME, "").trim(),
+                parseDate(values.get(BIRTHDAY)),
+                values.getOrDefault(ADDRESS, "").trim(),
+                values.getOrDefault(PHONE_NUMBER, "").trim(),
+                values.getOrDefault(SSS, "").trim(),
+                values.getOrDefault(PHILHEALTH, "").trim(),
+                values.getOrDefault(TIN, "").trim(),
+                values.getOrDefault(PAG_IBIG, "").trim(),
+                values.getOrDefault(STATUS, "Regular").trim(),
+                values.getOrDefault(POSITION, "").trim(),
+                values.getOrDefault(IMMEDIATE_SUPERVISOR, "").trim(),
+                money(values.get(BASIC_SALARY)),
+                money(values.get(RICE_SUBSIDY)),
+                money(values.get(PHONE_ALLOWANCE)),
+                money(values.get(CLOTHING_ALLOWANCE)),
+                money(values.get(GROSS_SEMI_MONTHLY_RATE)),
+                money(values.get(HOURLY_RATE))
         );
     }
 
-    // ---------------- Repository / Data helpers ----------------
+    private Map<String, String> collectValues() {
+        Map<String, String> values = new LinkedHashMap<>();
 
-    private boolean employeeExists(String employeeNo) {
-        if (employeeNo == null || employeeNo.isBlank()) return false;
-        return employeeRepo.findRowByEmployeeNo(employeeNo) != null;
-    }
-
-    private LinkedHashMap<String, Boolean> buildFinalHeaders() {
-        LinkedHashMap<String, Boolean> out = new LinkedHashMap<>();
-
-        List<String> fileHeaders = employeeRepo.getHeaders();
-        if (fileHeaders != null && !fileHeaders.isEmpty()) {
-            for (String h : fileHeaders) out.put(h, isRequired(h));
-        } else {
-            for (String h : defaultHeaders()) out.put(h, isRequired(h));
+        for (Map.Entry<String, JComponent> entry : fields.entrySet()) {
+            values.put(entry.getKey(), extractValue(entry.getValue()));
         }
 
-        for (String extra : EXTRA_FIELDS) out.putIfAbsent(extra, true);
-
-        return out;
+        return values;
     }
 
-    // ---------------- UI state helpers ----------------
+    private String extractValue(JComponent component) {
+        if (component instanceof JTextField textField) {
+            return textField.getText().trim();
+        }
+
+        if (component instanceof DatePicker datePicker) {
+            return datePicker.getDate() != null ? datePicker.getDate().toString() : "";
+        }
+
+        if (component instanceof JComboBox<?> comboBox) {
+            Object selected = comboBox.getSelectedItem();
+            return selected == null ? "" : selected.toString().trim();
+        }
+
+        return "";
+    }
+
+    private void markErrors(EmployeeValidationResult validationResult) {
+        for (EmployeeValidationResult.FieldError error : validationResult.getErrors()) {
+            setError(error.getField());
+        }
+    }
+
+    private void showValidationMessages(List<String> messages) {
+        String text = messages.stream()
+                .map(message -> "- " + message)
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse("Validation failed.");
+
+        JOptionPane.showMessageDialog(
+                this,
+                "Please fix the following:\n" + text,
+                "Validation Error",
+                JOptionPane.ERROR_MESSAGE
+        );
+    }
 
     private void setError(String header) {
-        JComponent c = fields.get(header);
-        if (c != null) c.setBorder(ERROR_BORDER);
+        JComponent component = fields.get(header);
+        if (component == null) {
+            return;
+        }
+
+        if (component instanceof DatePicker datePicker) {
+            datePicker.getComponentDateTextField().setBorder(ERROR_BORDER);
+            return;
+        }
+
+        component.setBorder(ERROR_BORDER);
     }
 
     private void resetBorders() {
-        for (JComponent c : fields.values()) {
-            c.setBorder(DEFAULT_BORDER);
+        for (JComponent component : fields.values()) {
+            if (component instanceof DatePicker datePicker) {
+                datePicker.getComponentDateTextField().setBorder(DEFAULT_BORDER);
+            } else {
+                component.setBorder(DEFAULT_BORDER);
+            }
         }
     }
 
     private void clearFields() {
-        for (JComponent c : fields.values()) {
-            if (c instanceof JTextField tf) tf.setText("");
-            else if (c instanceof DatePicker dp) dp.clear();
-            else if (c instanceof JComboBox<?> cb) cb.setSelectedIndex(0);
+        for (Map.Entry<String, JComponent> entry : fields.entrySet()) {
+            String header = entry.getKey();
+            JComponent component = entry.getValue();
 
-            c.setBorder(DEFAULT_BORDER);
+            if (component instanceof JTextField textField) {
+                textField.setText("");
+            } else if (component instanceof DatePicker datePicker) {
+                datePicker.clear();
+            } else if (component instanceof JComboBox<?> comboBox) {
+                if (STATUS.equals(header)) {
+                    comboBox.setSelectedItem("Regular");
+                } else {
+                    comboBox.setSelectedIndex(0);
+                }
+            }
         }
+
+        resetBorders();
+    }
+
+    private boolean isRequired(String header) {
+        return REQUIRED_FIELDS.contains(header);
+    }
+
+    private BigDecimal money(String value) {
+        if (value == null || value.isBlank()) {
+            return BigDecimal.ZERO;
+        }
+
+        String clean = value.replace("\"", "").replace(",", "").trim();
+
+        try {
+            return new BigDecimal(clean);
+        } catch (Exception ex) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private LocalDate parseDate(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        String text = value.trim();
+
+        try {
+            return LocalDate.parse(text);
+        } catch (Exception ex) {
+            try {
+                if (text.contains("/")) {
+                    String[] parts = text.split("/");
+                    return LocalDate.of(
+                            Integer.parseInt(parts[0]),
+                            Integer.parseInt(parts[1]),
+                            Integer.parseInt(parts[2])
+                    );
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return null;
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private void closeWindow() {
-        Window w = SwingUtilities.getWindowAncestor(this);
-        if (w != null) w.dispose();
-    }
-
-    // ---------------- Field rules ----------------
-
-    private boolean isRequired(String header) {
-        return header.equalsIgnoreCase("Employee #")
-                || header.equalsIgnoreCase("Last Name")
-                || header.equalsIgnoreCase("First Name")
-                || header.equalsIgnoreCase("Birthday")
-                || header.equalsIgnoreCase("Phone Number")
-                || header.equalsIgnoreCase("SSS #")
-                || header.equalsIgnoreCase("Philhealth #")
-                || header.equalsIgnoreCase("TIN #")
-                || header.equalsIgnoreCase("Pag-ibig #");
-    }
-
-    private boolean isNumericField(String header) {
-        return header.equalsIgnoreCase("Employee #")
-                || header.equalsIgnoreCase("Phone Number")
-                || header.equalsIgnoreCase("SSS #")
-                || header.equalsIgnoreCase("Philhealth #")
-                || header.equalsIgnoreCase("TIN #")
-                || header.equalsIgnoreCase("Pag-ibig #");
-    }
-
-    // ---------------- Parsing helpers ----------------
-
-    private BigDecimal money(String s) {
-        if (s == null || s.isBlank()) return BigDecimal.ZERO;
-        String clean = s.replace("\"", "").replace(",", "").trim();
-        try { return new BigDecimal(clean); }
-        catch (Exception ex) { return BigDecimal.ZERO; }
-    }
-
-    private LocalDate parseDate(String s) {
-        if (s == null || s.isBlank()) return null;
-
-        s = s.trim();
-        try {
-            return LocalDate.parse(s); // yyyy-MM-dd (DatePicker toString)
-        } catch (Exception ex) {
-            // fallback: yyyy/MM/dd
-            try {
-                if (s.contains("/")) {
-                    String[] p = s.split("/");
-                    return LocalDate.of(
-                            Integer.parseInt(p[0]),
-                            Integer.parseInt(p[1]),
-                            Integer.parseInt(p[2])
-                    );
-                }
-            } catch (Exception ignore) {}
+        Window window = SwingUtilities.getWindowAncestor(this);
+        if (window != null) {
+            window.dispose();
         }
-        return null;
     }
 
     private void addTooltipOnFocus(JTextField textField, String tooltipText) {
@@ -456,7 +448,8 @@ public class AddEmployeePanel extends JPanel {
                                 MouseEvent.MOUSE_MOVED,
                                 System.currentTimeMillis(),
                                 0,
-                                1, 1,
+                                1,
+                                1,
                                 0,
                                 false
                         )
@@ -465,30 +458,77 @@ public class AddEmployeePanel extends JPanel {
         });
     }
 
-    private void restrictNumeric(JTextField tf) {
-        ((AbstractDocument) tf.getDocument()).setDocumentFilter(new NumericDocumentFilter());
+    private void restrictNumeric(JTextField textField) {
+        ((AbstractDocument) textField.getDocument()).setDocumentFilter(new NumericDocumentFilter());
     }
 
-    private String[] defaultHeaders() {
-        return new String[]{
-                "Employee #", "Last Name", "First Name", "Birthday", "Address", "Phone Number",
-                "SSS #", "Philhealth #", "TIN #", "Pag-ibig #", "Status", "Position",
-                "Immediate Supervisor", "Basic Salary", "Rice Subsidy", "Phone Allowance",
-                "Clothing Allowance", "Gross Semi-monthly Rate", "Hourly Rate"
-        };
+    private void styleButtons() {
+        styleRoundedButton(submitButton, Color.BLACK, 140, 38);
+        styleRoundedButton(backButton, Color.BLACK, 90, 38);
     }
 
-    // numeric-only filter
+    private void styleRoundedButton(JButton button, Color background, int width, int height) {
+        button.setPreferredSize(new Dimension(width, height));
+        button.setForeground(Color.WHITE);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        button.setFocusPainted(false);
+        button.setContentAreaFilled(false);
+        button.setBorderPainted(false);
+        button.setOpaque(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        button.setUI(new javax.swing.plaf.basic.BasicButtonUI() {
+            @Override
+            public void paint(Graphics g, JComponent c) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(background);
+                g2.fillRoundRect(0, 0, c.getWidth(), c.getHeight(), 20, 20);
+                super.paint(g2, c);
+                g2.dispose();
+            }
+        });
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        Graphics2D g2 = (Graphics2D) g.create();
+        GradientPaint paint = new GradientPaint(0, 0, GRADIENT_START, 0, getHeight(), GRADIENT_END);
+        g2.setPaint(paint);
+        g2.fillRect(0, 0, getWidth(), getHeight());
+        g2.dispose();
+    }
+
     private static class NumericDocumentFilter extends DocumentFilter {
         @Override
         public void insertString(FilterBypass fb, int offset, String string, AttributeSet attr)
                 throws BadLocationException {
-            if (string != null && string.matches("\\d+")) super.insertString(fb, offset, string, attr);
+            if (string == null) {
+                return;
+            }
+
+            if (string.matches("\\d+")) {
+                super.insertString(fb, offset, string, attr);
+            }
         }
+
         @Override
         public void replace(FilterBypass fb, int offset, int length, String text, AttributeSet attrs)
                 throws BadLocationException {
-            if (text != null && text.matches("\\d+")) super.replace(fb, offset, length, text, attrs);
+            if (text == null || text.isEmpty()) {
+                super.replace(fb, offset, length, text, attrs);
+                return;
+            }
+
+            if (text.matches("\\d+")) {
+                super.replace(fb, offset, length, text, attrs);
+            }
+        }
+
+        @Override
+        public void remove(FilterBypass fb, int offset, int length) throws BadLocationException {
+            super.remove(fb, offset, length);
         }
     }
 }

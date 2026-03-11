@@ -1,6 +1,6 @@
 package gui;
 
-import repository.EmployeeRepository;
+import service.EmployeeRowDto;
 
 import javax.swing.*;
 import javax.swing.plaf.basic.BasicScrollBarUI;
@@ -9,79 +9,53 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Vector;
 
 public class EmployeeTable extends JPanel {
 
-    private final EmployeeRepository employeeRepo;
-
-    private JTable table;
-    private DefaultTableModel model;
-
-    private List<String[]> employeeRows = new ArrayList<>();
-
-    // Column names shown in the table
-    private final String[] columnNames = {
+    private static final String[] COLUMN_NAMES = {
             "Employee ID", "Last Name", "First Name",
             "SSS No.", "PhilHealth No.", "TIN", "Pag-IBIG No."
     };
 
-    // Indices in employee.txt that match above columns
-    private final int[] indices = {0, 1, 2, 6, 7, 8, 9};
+    private JTable table;
+    private DefaultTableModel model;
 
-//    private final Color gradientStart = new Color(255, 204, 229);
-//    private final Color gradientEnd   = new Color(255, 229, 180);
+    private List<EmployeeRowDto> employeeRows = new ArrayList<>();
 
-    public EmployeeTable(EmployeeRepository employeeRepo) {
-        this.employeeRepo = employeeRepo;
-
+    public EmployeeTable() {
         setLayout(new BorderLayout());
         setOpaque(false);
 
-        // load data
-        reloadFromRepo();
-
         buildTable();
         buildScrollPane();
-
-        // initial fill
-        refreshTable(employeeRows);
     }
-
-    // ---------------- public API ----------------
 
     public JTable getTable() {
         return table;
     }
 
-    /** Reload from repo and refresh */
-    public void reload() {
-        reloadFromRepo();
-        refreshTable(employeeRows);
-    }
+    public void refreshTable(List<EmployeeRowDto> rows) {
+        employeeRows = rows == null ? new ArrayList<>() : new ArrayList<>(rows);
 
-    /** Updates JTable model rows using "indices" projection
-     * @param rows */
-    public final void refreshTable(List<String[]> rows) {
         model.setRowCount(0);
 
-        if (rows == null) return;
-
-        int maxIndex = indices[indices.length - 1];
-
-        for (String[] row : rows) {
-            if (row == null || row.length <= maxIndex) continue;
-
-            String[] displayRow = new String[indices.length];
-            for (int i = 0; i < indices.length; i++) {
-                displayRow[i] = safe(row[indices[i]]);
+        for (EmployeeRowDto row : employeeRows) {
+            if (row == null) {
+                continue;
             }
-            model.addRow(displayRow);
+
+            model.addRow(new Object[]{
+                    safe(row.getEmployeeId()),
+                    safe(row.getLastName()),
+                    safe(row.getFirstName()),
+                    safe(row.getSssNumber()),
+                    safe(row.getPhilHealthNumber()),
+                    safe(row.getTinNumber()),
+                    safe(row.getPagIbigNumber())
+            });
         }
     }
 
-    /** Simple contains() filter across shown fields
-     * @param query */
     public void filterTable(String query) {
         if (query == null || query.trim().isEmpty()) {
             refreshTable(employeeRows);
@@ -89,48 +63,53 @@ public class EmployeeTable extends JPanel {
         }
 
         String q = query.trim().toLowerCase();
-        List<String[]> filtered = new ArrayList<>();
+        List<EmployeeRowDto> filtered = new ArrayList<>();
 
-        for (String[] row : employeeRows) {
-            if (row == null) continue;
+        for (EmployeeRowDto row : employeeRows) {
+            if (row == null) {
+                continue;
+            }
 
-            for (int idx : indices) {
-                if (idx < row.length && safe(row[idx]).toLowerCase().contains(q)) {
-                    filtered.add(row);
-                    break;
-                }
+            if (containsIgnoreCase(row.getEmployeeId(), q)
+                    || containsIgnoreCase(row.getLastName(), q)
+                    || containsIgnoreCase(row.getFirstName(), q)
+                    || containsIgnoreCase(row.getSssNumber(), q)
+                    || containsIgnoreCase(row.getPhilHealthNumber(), q)
+                    || containsIgnoreCase(row.getTinNumber(), q)
+                    || containsIgnoreCase(row.getPagIbigNumber(), q)) {
+                filtered.add(row);
             }
         }
 
-        refreshTable(filtered);
+        model.setRowCount(0);
+
+        for (EmployeeRowDto row : filtered) {
+            model.addRow(new Object[]{
+                    safe(row.getEmployeeId()),
+                    safe(row.getLastName()),
+                    safe(row.getFirstName()),
+                    safe(row.getSssNumber()),
+                    safe(row.getPhilHealthNumber()),
+                    safe(row.getTinNumber()),
+                    safe(row.getPagIbigNumber())
+            });
+        }
     }
 
-    /** Returns the FULL raw row (all columns) of the selected employee */
-    public Vector<Object> getSelectedEmployeeFullDetails() {
+    public String getSelectedEmployeeId() {
         int selectedRow = table.getSelectedRow();
-        if (selectedRow == -1) return null;
+        if (selectedRow == -1) {
+            return null;
+        }
 
         int modelRow = table.convertRowIndexToModel(selectedRow);
-        String employeeId = safe(table.getModel().getValueAt(modelRow, 0));
+        Object value = table.getModel().getValueAt(modelRow, 0);
 
-        String[] full = employeeRepo.findRowByEmployeeNo(employeeId);
-        if (full == null) return null;
-
-        Vector<Object> v = new Vector<>();
-        for (String s : full) v.add(s);
-        return v;
-    }
-
-    // ---------------- internals ----------------
-
-    private void reloadFromRepo() {
-        employeeRepo.load();
-        employeeRows = new ArrayList<>(employeeRepo.getRows());
+        return safe(value);
     }
 
     private void buildTable() {
-        model = new DefaultTableModel(columnNames, 0) {
-            // make table read-only
+        model = new DefaultTableModel(COLUMN_NAMES, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
@@ -138,7 +117,6 @@ public class EmployeeTable extends JPanel {
         };
 
         table = new JTable(model);
-
         table.setFillsViewportHeight(true);
         table.setOpaque(false);
         table.setShowGrid(true);
@@ -146,19 +124,16 @@ public class EmployeeTable extends JPanel {
         table.setBorder(BorderFactory.createEmptyBorder());
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
-        // Custom cell renderer for alternating row colors and responsive font
         table.setDefaultRenderer(Object.class, new ResponsiveCellRenderer());
 
-        // Header renderer
         JTableHeaderRenderer headerRenderer = new JTableHeaderRenderer();
         for (int i = 0; i < table.getColumnCount(); i++) {
             table.getColumnModel().getColumn(i).setHeaderRenderer(headerRenderer);
         }
 
-        // Optional nicer column widths
-        table.getColumnModel().getColumn(0).setPreferredWidth(90);  // Employee ID
-        table.getColumnModel().getColumn(1).setPreferredWidth(120); // Last Name
-        table.getColumnModel().getColumn(2).setPreferredWidth(120); // First Name
+        table.getColumnModel().getColumn(0).setPreferredWidth(90);
+        table.getColumnModel().getColumn(1).setPreferredWidth(120);
+        table.getColumnModel().getColumn(2).setPreferredWidth(120);
     }
 
     private void buildScrollPane() {
@@ -172,11 +147,13 @@ public class EmployeeTable extends JPanel {
         add(scrollPane, BorderLayout.CENTER);
     }
 
-    private static String safe(Object o) {
-        return (o == null) ? "" : o.toString().trim();
+    private boolean containsIgnoreCase(String value, String query) {
+        return safe(value).toLowerCase().contains(query);
     }
 
-    // ---------------- renderers ----------------
+    private static String safe(Object value) {
+        return value == null ? "" : value.toString().trim();
+    }
 
     private static class JTableHeaderRenderer extends DefaultTableCellRenderer {
         public JTableHeaderRenderer() {
@@ -202,25 +179,25 @@ public class EmployeeTable extends JPanel {
         public Component getTableCellRendererComponent(
                 JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column
         ) {
-            Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            Component component = super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column
+            );
 
             if (!isSelected) {
-                c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(230, 240, 255));
+                component.setBackground(row % 2 == 0 ? Color.WHITE : new Color(230, 240, 255));
             } else {
-                c.setBackground(new Color(0, 0, 0)); //200, 225, 255
+                component.setBackground(Color.BLACK);
             }
 
-            // Slight padding
-            if (c instanceof JLabel label) {
+            if (component instanceof JLabel label) {
                 label.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
             }
 
-            // responsive font
             int width = EmployeeTable.this.getWidth();
             int fontSize = width < 650 ? 11 : (width < 900 ? 13 : 14);
-            c.setFont(new Font("SansSerif", Font.PLAIN, fontSize));
+            component.setFont(new Font("SansSerif", Font.PLAIN, fontSize));
 
-            return c;
+            return component;
         }
     }
 
@@ -252,16 +229,4 @@ public class EmployeeTable extends JPanel {
             return button;
         }
     }
-
-    // ---------------- gradient background ----------------
-
-//    @Override
-//    protected void paintComponent(Graphics g) {
-//        super.paintComponent(g);
-//        Graphics2D g2d = (Graphics2D) g;
-//
-//        GradientPaint gp = new GradientPaint(0, 0, gradientStart, 0, getHeight(), gradientEnd);
-//        g2d.setPaint(gp);
-//        g2d.fillRect(0, 0, getWidth(), getHeight());
-//    }
 }

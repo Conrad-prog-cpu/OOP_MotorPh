@@ -1,23 +1,21 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Interface.java to edit this template
- */
 package service;
 
-/**
- *
- * @author ca
- */
-import dao.UserSession;
-import model.Employee;
-
+import java.time.YearMonth;
 import java.util.List;
 
 public interface EmployeeService {
 
-    List<Employee> getEmployees(UserSession session);
+    List<EmployeeRowDto> findAllRows();
 
-    Employee getEmployeeById(UserSession session, String employeeId);
+    EmployeeDetailsDto findDetailsById(String employeeId);
 
-    void updateEmployee(UserSession session, Employee employee);
+    boolean existsByEmployeeId(String employeeId);
+
+    boolean addEmployee(EmployeeCreateRequest request);
+
+    boolean updateEmployee(EmployeeUpdateRequest request);
+
+    boolean deleteByEmployeeId(String employeeId);
+
+    List<YearMonth> findAvailablePayrollMonths(String employeeId);
 }

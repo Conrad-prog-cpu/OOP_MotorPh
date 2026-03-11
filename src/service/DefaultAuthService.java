@@ -1,53 +1,70 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package service;
-import model.Role;
-import model.User;
+
+import model.Employee;
 import model.UserAccount;
 import repository.CredentialRepository;
 import repository.EmployeeRepository;
-/**
- *
- * @author ca
- */
+
+import java.util.Objects;
+import java.util.Optional;
+
 public class DefaultAuthService implements AuthService {
 
-    private final CredentialRepository credentialRepo;
-    private final EmployeeRepository employeeRepo;
+    private final CredentialRepository credentialRepository;
+    private final EmployeeRepository employeeRepository;
 
-    public DefaultAuthService(CredentialRepository credentialRepo, EmployeeRepository employeeRepo) {
-        this.credentialRepo = credentialRepo;
-        this.employeeRepo = employeeRepo;
-        this.employeeRepo.load(); // needed to map employee# -> firstName/position
+    public DefaultAuthService(
+            CredentialRepository credentialRepository,
+            EmployeeRepository employeeRepository
+    ) {
+        this.credentialRepository = Objects.requireNonNull(credentialRepository, "credentialRepository is required");
+        this.employeeRepository = Objects.requireNonNull(employeeRepository, "employeeRepository is required");
     }
 
     @Override
-    public User login(String username, String password) {
-        UserAccount account = credentialRepo.validate(username, password);
-        if (account == null) return null;
+    public AuthenticatedUser login(String username, String password) {
+        String cleanUsername = safe(username);
+        String cleanPassword = safe(password);
 
-        String[] empRow = employeeRepo.findRowByEmployeeNo(account.getEmployeeNumber());
+        if (cleanUsername.isEmpty() || cleanPassword.isEmpty()) {
+            throw new IllegalArgumentException("Username and password are required.");
+        }
+
+        credentialRepository.load();
+        employeeRepository.load();
+
+        UserAccount account = credentialRepository.validate(cleanUsername, cleanPassword);
+        if (account == null) {
+            return null;
+        }
+
+        Optional<Employee> employeeOpt = employeeRepository.findById(account.getEmployeeNumber());
 
         String firstName = "(Unknown)";
         String position = "(Unknown)";
 
-        if (empRow != null) {
-            int firstNameIdx = employeeRepo.getHeaders().indexOf("First Name");
-            int positionIdx  = employeeRepo.getHeaders().indexOf("Position");
-
-            if (firstNameIdx >= 0 && firstNameIdx < empRow.length) firstName = empRow[firstNameIdx];
-            if (positionIdx  >= 0 && positionIdx  < empRow.length) position  = empRow[positionIdx];
+        if (employeeOpt.isPresent()) {
+            Employee employee = employeeOpt.get();
+            firstName = safeOrDefault(employee.getFirstName(), "(Unknown)");
+            position = safeOrDefault(employee.getPosition(), "(Unknown)");
         }
 
-        return new User(
-                account.getCredentialId(),
-                account.getUsername(),
+        return new AuthenticatedUser(
+                safe(account.getCredentialId()),
+                safe(account.getUsername()),
                 account.getRole(),
-                account.getEmployeeNumber(),
+                safe(account.getEmployeeNumber()),
                 firstName,
                 position
         );
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private String safeOrDefault(String value, String fallback) {
+        String clean = safe(value);
+        return clean.isEmpty() ? fallback : clean;
     }
 }

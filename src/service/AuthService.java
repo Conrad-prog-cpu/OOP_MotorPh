@@ -3,11 +3,11 @@
  * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Interface.java to edit this template
  */
 package service;
-import model.User;
+
 /**
  *
  * @author ca
  */
 public interface AuthService {
-    User login(String username, String password);
+    AuthenticatedUser login(String username, String password);
 }
