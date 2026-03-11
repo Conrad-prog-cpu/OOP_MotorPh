@@ -1,21 +1,23 @@
 package gui;
 
-import model.AttendanceLog;
-import model.PayrollResult;
-import model.Employee;
-
-import repository.AttendanceRepository;
-import repository.EmployeeRepository;
+import service.AuthenticatedUser;
+import service.EmployeeDetailsDto;
+import service.EmployeeService;
+import service.PayrollResultDto;
 import service.PayrollService;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.plaf.basic.BasicScrollBarUI;
 import java.awt.*;
-import java.time.*;
+import java.time.Month;
+import java.time.YearMonth;
 import java.time.format.TextStyle;
 import java.util.List;
-import java.util.*;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 public class ViewEmployeePanel extends JFrame {
 
@@ -23,71 +25,60 @@ public class ViewEmployeePanel extends JFrame {
     private static final Font HEADER_FONT = new Font("Segoe UI", Font.BOLD, 16);
 
     private static final Color GRADIENT_START = new Color(255, 204, 229);
-    private static final Color GRADIENT_END   = new Color(255, 229, 180);
-
-    private final EmployeeRepository employeeRepo;
-    private final AttendanceRepository attendanceRepo;
-    private final PayrollService payrollService;
+    private static final Color GRADIENT_END = new Color(255, 229, 180);
 
     private final String employeeId;
+    private final EmployeeService employeeService;
+    private final PayrollService payrollService;
+    private final AuthenticatedUser currentUser;
 
-    private final JComboBox<MonthYear> monthBox = new JComboBox<>();
+    private final JComboBox<MonthYearItem> monthBox = new JComboBox<>();
     private final JTextPane reportPane = new JTextPane();
 
+    private EmployeeDetailsDto employeeDetails;
+
     public ViewEmployeePanel(
-            Vector<Object> employeeData,
-            EmployeeRepository employeeRepo,
-            AttendanceRepository attendanceRepo,
-            PayrollService payrollService
+            String employeeId,
+            EmployeeService employeeService,
+            PayrollService payrollService,
+            AuthenticatedUser currentUser
     ) {
-        this.employeeRepo = employeeRepo;
-        this.attendanceRepo = attendanceRepo;
-        this.payrollService = payrollService;
+        this.employeeId = safe(employeeId);
+        this.employeeService = Objects.requireNonNull(employeeService, "employeeService is required");
+        this.payrollService = Objects.requireNonNull(payrollService, "payrollService is required");
+        this.currentUser = currentUser;
 
-        this.employeeId = Objects.toString(employeeData.get(0), "").trim();
+        this.employeeDetails = employeeService.findDetailsById(this.employeeId);
 
+        setupFrame();
+        buildUI();
+        loadAvailableMonths();
+    }
+
+    private void setupFrame() {
         setTitle("Employee Details");
         setSize(1000, 600);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+    }
 
-        // Load cache (if repo uses caching)
-        this.employeeRepo.load();
-        this.attendanceRepo.load();
-
-        // ===== LEFT PANEL =====
-        JPanel leftPanel = buildLeftDetailsPanel(employeeData);
+    private void buildUI() {
+        JPanel leftPanel = buildLeftDetailsPanel();
         JScrollPane leftScroll = new JScrollPane(leftPanel);
         leftScroll.setBorder(null);
         leftScroll.getVerticalScrollBar().setUI(createScrollBarUI());
 
-        // ===== RIGHT PANEL =====
         JPanel rightPanel = buildRightPayrollPanel();
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftScroll, rightPanel);
         splitPane.setResizeWeight(0.5);
         splitPane.setDividerLocation(0.5);
         splitPane.setOneTouchExpandable(true);
-        add(splitPane);
 
-        loadAvailableMonths();
-
-        setVisible(true);
+        add(splitPane, BorderLayout.CENTER);
     }
 
-    public ViewEmployeePanel(
-            String employeeId,
-            EmployeeRepository employeeRepo,
-            AttendanceRepository attendanceRepo,
-            PayrollService payrollService
-    ) {
-        this(toVectorFromEmployeeId(employeeId, employeeRepo), employeeRepo, attendanceRepo, payrollService);
-    }
-
-    // =========================
-    // LEFT DETAILS PANEL
-    // =========================
-    private JPanel buildLeftDetailsPanel(Vector<Object> employeeData) {
+    private JPanel buildLeftDetailsPanel() {
         JPanel leftPanel = new JPanel(new GridBagLayout()) {
             @Override
             protected void paintComponent(Graphics g) {
@@ -97,6 +88,7 @@ public class ViewEmployeePanel extends JFrame {
                 g2d.fillRect(0, 0, getWidth(), getHeight());
             }
         };
+
         leftPanel.setOpaque(false);
         leftPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
 
@@ -105,6 +97,7 @@ public class ViewEmployeePanel extends JFrame {
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1;
+        gbc.gridy = 0;
 
         String[][] sections = {
                 {"Personal Information", "Employee No.", "Last Name", "First Name", "Birthday", "Address", "Phone Number"},
@@ -112,9 +105,6 @@ public class ViewEmployeePanel extends JFrame {
                 {"Job Information", "Status", "Position", "Immediate Supervisor"},
                 {"Compensation & Benefits", "Basic Salary", "Rice Subsidy", "Phone Allowance", "Clothing Allowance", "Gross Semi-monthly Rate", "Hourly Rate"}
         };
-
-        int dataIndex = 0;
-        gbc.gridy = 0;
 
         for (String[] section : sections) {
             JLabel sectionTitle = new JLabel(section[0]);
@@ -135,11 +125,7 @@ public class ViewEmployeePanel extends JFrame {
 
                 gbc.gridx = 1;
 
-                String val = (dataIndex < employeeData.size())
-                        ? Objects.toString(employeeData.get(dataIndex), "")
-                        : "";
-
-                JTextArea dataField = new JTextArea(val);
+                JTextArea dataField = new JTextArea(getFieldValue(section[i]));
                 dataField.setWrapStyleWord(true);
                 dataField.setLineWrap(true);
                 dataField.setEditable(false);
@@ -148,9 +134,7 @@ public class ViewEmployeePanel extends JFrame {
                 dataField.setBorder(null);
 
                 leftPanel.add(dataField, gbc);
-
                 gbc.gridy++;
-                dataIndex++;
             }
 
             gbc.gridy++;
@@ -159,9 +143,6 @@ public class ViewEmployeePanel extends JFrame {
         return leftPanel;
     }
 
-    // =========================
-    // RIGHT PAYROLL PANEL
-    // =========================
     private JPanel buildRightPayrollPanel() {
         JPanel rightPanel = new JPanel(new BorderLayout()) {
             @Override
@@ -172,39 +153,25 @@ public class ViewEmployeePanel extends JFrame {
                 g2d.fillRect(0, 0, getWidth(), getHeight());
             }
         };
+
         rightPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
 
-        monthBox.setFont(UI_FONT);
+        configureMonthBox();
 
-        monthBox.setRenderer(new DefaultListCellRenderer() {
-            @Override
-            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-                                                          boolean isSelected, boolean cellHasFocus) {
-                Component c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                c.setFont(UI_FONT);
-
-                if (value instanceof MonthYear my && my.isPlaceholder()) {
-                    c.setForeground(Color.GRAY);
-                    setText("Select Month");
-                } else {
-                    c.setForeground(Color.BLACK);
-                }
-                return c;
-            }
-        });
-
-        JButton computeBtn = new JButton("Compute");
-        computeBtn.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        computeBtn.setBackground(Color.BLACK);
-        computeBtn.setForeground(Color.WHITE);
-        computeBtn.setFocusPainted(false);
-        computeBtn.setBorder(BorderFactory.createEmptyBorder());
-        computeBtn.setPreferredSize(new Dimension(130, 40));
+        JButton computeButton = new JButton("Compute");
+        computeButton.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        computeButton.setBackground(Color.BLACK);
+        computeButton.setForeground(Color.WHITE);
+        computeButton.setFocusPainted(false);
+        computeButton.setBorder(BorderFactory.createEmptyBorder());
+        computeButton.setPreferredSize(new Dimension(130, 40));
+        computeButton.addActionListener(e -> computeSelectedMonth());
 
         reportPane.setContentType("text/html");
         reportPane.setEditable(false);
         reportPane.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         reportPane.setBackground(UIManager.getColor("Panel.background"));
+        reportPane.setText(buildEmptyReportHtml());
 
         JScrollPane reportScroll = new JScrollPane(reportPane);
         reportScroll.setBorder(null);
@@ -214,9 +181,7 @@ public class ViewEmployeePanel extends JFrame {
         topPanel.setOpaque(false);
         topPanel.add(monthBox);
         topPanel.add(Box.createHorizontalStrut(10));
-        topPanel.add(computeBtn);
-
-        computeBtn.addActionListener(e -> computeSelectedMonth());
+        topPanel.add(computeButton);
 
         rightPanel.add(topPanel, BorderLayout.NORTH);
         rightPanel.add(reportScroll, BorderLayout.CENTER);
@@ -224,158 +189,200 @@ public class ViewEmployeePanel extends JFrame {
         return rightPanel;
     }
 
-    // =========================
-    // MONTHS + COMPUTE
-    // =========================
-        private void loadAvailableMonths() {
-         monthBox.removeAllItems();
-         monthBox.addItem(new MonthYear(null, 0));
-         
-         attendanceRepo.load();
+    private void configureMonthBox() {
+        monthBox.setFont(UI_FONT);
 
-         LocalDate start = LocalDate.of(2000, 1, 1);
-         LocalDate end = LocalDate.now();
+        monthBox.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(
+                    JList<?> list,
+                    Object value,
+                    int index,
+                    boolean isSelected,
+                    boolean cellHasFocus
+            ) {
+                Component c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                c.setFont(UI_FONT);
 
-         List<AttendanceLog> logs = attendanceRepo.findByEmployeeAndDateRange(employeeId.trim(), start, end);
+                if (value instanceof MonthYearItem item && item.isPlaceholder()) {
+                    c.setForeground(Color.GRAY);
+                    setText("Select Month");
+                } else {
+                    c.setForeground(Color.BLACK);
+                }
 
-         SortedSet<MonthYear> months = new TreeSet<>();
-         for (AttendanceLog log : logs) {
-             LocalDate d = log.getDate();
-             if (d != null) months.add(new MonthYear(d.getMonth(), d.getYear()));
-         }
-
-         for (MonthYear my : months) monthBox.addItem(my);
-     }
-
-        private void computeSelectedMonth() {
-            Object selected = monthBox.getSelectedItem();
-            if (!(selected instanceof MonthYear my) || my.isPlaceholder()) {
-                JOptionPane.showMessageDialog(this, "Please select a valid month.");
-                return;
+                return c;
             }
+        });
+    }
 
-            try {
-                PayrollResult result = payrollService.computeForMonth(employeeId, my.year, my.month.getValue());
-                reportPane.setText(buildPayrollHtml(result, my));
-                reportPane.setCaretPosition(0);
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Calculation error: " + ex.getClass().getSimpleName() + " - " + ex.getMessage());
+    private void loadAvailableMonths() {
+        monthBox.removeAllItems();
+        monthBox.addItem(MonthYearItem.placeholder());
 
+        List<YearMonth> availableMonths = employeeService.findAvailablePayrollMonths(employeeId);
+
+        SortedSet<MonthYearItem> items = new TreeSet<>();
+        for (YearMonth ym : availableMonths) {
+            if (ym != null) {
+                items.add(new MonthYearItem(ym.getMonth(), ym.getYear()));
             }
         }
-        //Overload instances
-        private String buildPayrollHtml(PayrollResult r, MonthYear my) {
-            Employee emp = employeeRepo.findById(employeeId.trim()).orElse(null);
-            return buildPayrollHtml(r, my, emp);
+
+        for (MonthYearItem item : items) {
+            monthBox.addItem(item);
         }
-    
+    }
 
-       private String buildPayrollHtml(PayrollResult r, MonthYear my, Employee emp) {
-            String monthName = my.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH);
+    private void computeSelectedMonth() {
+        Object selected = monthBox.getSelectedItem();
 
-                // Employee benefits (from Employee, not PayrollResult)
-                double rice = emp != null ? safeBD(emp.getRiceSubsidy()) : 0;
-                double phone = emp != null ? safeBD(emp.getPhoneAllowance()) : 0;
-                double clothing = emp != null ? safeBD(emp.getClothingAllowance()) : 0;
-                double totalBenefits = rice + phone + clothing;
+        if (!(selected instanceof MonthYearItem item) || item.isPlaceholder()) {
+            JOptionPane.showMessageDialog(this, "Please select a valid month.");
+            return;
+        }
 
-                // Contributions
-                double sss = safeBD(r.getContributions() != null ? r.getContributions().getSss() : null);
-                double ph  = safeBD(r.getContributions() != null ? r.getContributions().getPhilHealth() : null);
-                double pi  = safeBD(r.getContributions() != null ? r.getContributions().getPagIbig() : null);
+        try {
+            PayrollResultDto result = payrollService.computeForMonthDto(employeeId, item.year(), item.month().getValue());
+            reportPane.setText(buildPayrollHtml(result, item));
+            reportPane.setCaretPosition(0);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Calculation error: " + ex.getClass().getSimpleName() + " - " + ex.getMessage()
+            );
+        }
+    }
 
-                // Tax
-                double tax = safeBD(r.getWithholdingTax());
+    private String buildPayrollHtml(PayrollResultDto result, MonthYearItem item) {
+        String monthName = item.month().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
 
-                // Late / OT
-                int lateMinutes = r.getLateMinutes();
-                double lateDeduction = safeBD(r.getLateDeduction());
+        double rice = safeDouble(employeeDetails != null ? employeeDetails.getRiceSubsidy() : null);
+        double phone = safeDouble(employeeDetails != null ? employeeDetails.getPhoneAllowance() : null);
+        double clothing = safeDouble(employeeDetails != null ? employeeDetails.getClothingAllowance() : null);
+        double totalBenefits = rice + phone + clothing;
 
-                double overtimeHours = safeBD(r.getOvertimeHours());
-                double overtimePay = safeBD(r.getOvertimePay());
+        double sss = safeDouble(result.getSss());
+        double philHealth = safeDouble(result.getPhilHealth());
+        double pagIbig = safeDouble(result.getPagIbig());
+        double tax = safeDouble(result.getWithholdingTax());
 
-                // Gross before/after late
-                double grossAfterLate = safeBD(r.getGrossPay());
-                double grossBeforeLate = grossAfterLate + lateDeduction; // Option A requirement
+        int lateMinutes = result.getLateMinutes();
+        double lateDeduction = safeDouble(result.getLateDeduction());
 
-                double totalDeductions = sss + ph + pi + tax;
+        double overtimeHours = safeDouble(result.getOvertimeHours());
+        double overtimePay = safeDouble(result.getOvertimePay());
 
-                return String.format("""
-                    <html>
-                    <body style='font-family:Calibri; font-size:12px;'>
-                    <pre>
-            <span style='font-size:16px; font-weight:bold;'>===== PAYROLL REPORT =====</span>
-            <span style='font-size:13px; font-weight:bold;'>%s %d</span>
+        double grossAfterLate = safeDouble(result.getGrossPay());
+        double grossBeforeLate = grossAfterLate + lateDeduction;
 
-            <b>WORK:</b>
-            • Total Hours Worked: %s
-            • Overtime Hours: %,.2f
-            • Late Minutes: %d
+        double totalDeductions = sss + philHealth + pagIbig + tax;
 
-            <b>BENEFITS / ALLOWANCES:</b>
-            • Rice Subsidy: ₱%,.2f
-            • Phone Allowance: ₱%,.2f
-            • Clothing Allowance: ₱%,.2f
-            • <b>Total Benefits:</b> ₱%,.2f
+        return String.format("""
+                <html>
+                <body style='font-family:Calibri; font-size:12px;'>
+                <pre>
+        <span style='font-size:16px; font-weight:bold;'>===== PAYROLL REPORT =====</span>
+        <span style='font-size:13px; font-weight:bold;'>%s %d</span>
 
-            <b>PAY:</b>
-            • Basic Pay: ₱%,.2f
-            • Overtime Pay: ₱%,.2f
-            • <b>Gross Before Late Deduction:</b> ₱%,.2f
-            • Late Deduction: -₱%,.2f
-            • <b>Gross After Late Deduction:</b> ₱%,.2f
+        <b>WORK:</b>
+        • Total Hours Worked: %s
+        • Overtime Hours: %,.2f
+        • Late Minutes: %d
 
-            <b>DEDUCTIONS:</b>
-            • Withholding Tax: ₱%,.2f
-            • SSS: ₱%,.2f
-            • PhilHealth: ₱%,.2f
-            • Pag-IBIG: ₱%,.2f
-            • <b>Total Deductions:</b> ₱%,.2f
+        <b>BENEFITS / ALLOWANCES:</b>
+        • Rice Subsidy: ₱%,.2f
+        • Phone Allowance: ₱%,.2f
+        • Clothing Allowance: ₱%,.2f
+        • <b>Total Benefits:</b> ₱%,.2f
 
-            <b><span style='color:green;'>NET PAY: ₱%,.2f</span></b>
-                    </pre>
-                    </body>
-                    </html>
-                    """,
-                    monthName, my.year,
+        <b>PAY:</b>
+        • Basic Pay: ₱%,.2f
+        • Overtime Pay: ₱%,.2f
+        • <b>Gross Before Late Deduction:</b> ₱%,.2f
+        • Late Deduction: -₱%,.2f
+        • <b>Gross After Late Deduction:</b> ₱%,.2f
 
-                    safeObj(r.getHoursWorked()),
-                    overtimeHours,
-                    lateMinutes,
+        <b>DEDUCTIONS:</b>
+        • Withholding Tax: ₱%,.2f
+        • SSS: ₱%,.2f
+        • PhilHealth: ₱%,.2f
+        • Pag-IBIG: ₱%,.2f
+        • <b>Total Deductions:</b> ₱%,.2f
 
-                    rice, phone, clothing, totalBenefits,
+        <b><span style='color:green;'>NET PAY: ₱%,.2f</span></b>
+                </pre>
+                </body>
+                </html>
+                """,
+                monthName,
+                item.year(),
+                safe(result.getHoursWorked()),
+                overtimeHours,
+                lateMinutes,
+                rice,
+                phone,
+                clothing,
+                totalBenefits,
+                safeDouble(result.getBasicPay()),
+                overtimePay,
+                grossBeforeLate,
+                lateDeduction,
+                grossAfterLate,
+                tax,
+                sss,
+                philHealth,
+                pagIbig,
+                totalDeductions,
+                safeDouble(result.getNetPay())
+        );
+    }
 
-                    safeBD(r.getBasicPay()),
-                    overtimePay,
-                    grossBeforeLate,
-                    lateDeduction,
-                    grossAfterLate,
+    private String buildEmptyReportHtml() {
+        return """
+                <html>
+                <body style='font-family:Segoe UI; font-size:12px; padding:10px; color:#666;'>
+                    Select a month, then click <b>Compute</b>.
+                </body>
+                </html>
+                """;
+    }
 
-                    tax, sss, ph, pi, totalDeductions,
+    private String getFieldValue(String fieldLabel) {
+        if (employeeDetails == null) {
+            return "";
+        }
 
-                    safeBD(r.getNetPay())
-                );
-            }
+        return switch (fieldLabel) {
+            case "Employee No." -> safe(employeeDetails.getEmployeeId());
+            case "Last Name" -> safe(employeeDetails.getLastName());
+            case "First Name" -> safe(employeeDetails.getFirstName());
+            case "Birthday" -> safe(employeeDetails.getBirthday());
+            case "Address" -> safe(employeeDetails.getAddress());
+            case "Phone Number" -> safe(employeeDetails.getPhoneNumber());
+            case "SSS No." -> safe(employeeDetails.getSssNumber());
+            case "PhilHealth No." -> safe(employeeDetails.getPhilHealthNumber());
+            case "TIN No." -> safe(employeeDetails.getTinNumber());
+            case "PAG-IBIG No." -> safe(employeeDetails.getPagIbigNumber());
+            case "Status" -> safe(employeeDetails.getStatus());
+            case "Position" -> safe(employeeDetails.getPosition());
+            case "Immediate Supervisor" -> safe(employeeDetails.getImmediateSupervisor());
+            case "Basic Salary" -> safe(employeeDetails.getBasicSalary());
+            case "Rice Subsidy" -> safe(employeeDetails.getRiceSubsidy());
+            case "Phone Allowance" -> safe(employeeDetails.getPhoneAllowance());
+            case "Clothing Allowance" -> safe(employeeDetails.getClothingAllowance());
+            case "Gross Semi-monthly Rate" -> safe(employeeDetails.getGrossSemiMonthlyRate());
+            case "Hourly Rate" -> safe(employeeDetails.getHourlyRate());
+            default -> "";
+        };
+    }
 
-            private double safeBD(java.math.BigDecimal bd) {
-            return (bd == null) ? 0.0 : bd.doubleValue();
-            }
-
-            
-            private String safeObj(Object o) {
-            return (o == null) ? "0" : o.toString();
-            }
-
-
-    // =========================
-    // SCROLLBAR UI
-    // =========================
     private static BasicScrollBarUI createScrollBarUI() {
         return new BasicScrollBarUI() {
             @Override
             protected void configureScrollBarColors() {
-                this.thumbColor = Color.WHITE;
-                this.trackColor = GRADIENT_END;
+                thumbColor = Color.WHITE;
+                trackColor = GRADIENT_END;
             }
 
             @Override
@@ -385,80 +392,26 @@ public class ViewEmployeePanel extends JFrame {
         };
     }
 
-    // =========================
-    // BUILD VECTOR FROM REPO
-    // =========================
-    private static Vector<Object> toVectorFromEmployeeId(String employeeId, EmployeeRepository repo) {
-        repo.load();
-
-        Employee emp = null;
-
-        // Supports either:
-        // Employee findById(String)
-        // or Optional<Employee> findById(String)
-        try {
-            Object result = repo.findById(employeeId);
-
-            if (result instanceof Optional<?> opt) {
-                Object o = opt.orElse(null);
-                if (o instanceof Employee e) emp = e;
-            } else if (result instanceof Employee e) {
-                emp = e;
-            }
-        } catch (Exception ignored) {
-            emp = null;
-        }
-
-        Vector<Object> v = new Vector<>();
-        v.add(employeeId);
-
-        if (emp == null) {
-            return v;
-        }
-
-        // ORDER must match your left section headings
-        v.clear();
-
-        // Personal Information
-        v.add(emp.getEmployeeID());
-        v.add(emp.getLastName());
-        v.add(emp.getFirstName());
-        v.add(emp.getBirthday() != null ? emp.getBirthday().toString() : "");
-        v.add(emp.getAddress());
-        v.add(emp.getPhoneNumber());
-
-        // Gov IDs
-        v.add(emp.getSssNumber());
-        v.add(emp.getPhilHealthNumber());
-        v.add(emp.getTinNumber());
-        v.add(emp.getPagIbigNumber());
-
-        // Job
-        v.add(emp.getStatus());
-        v.add(emp.getPosition());
-        v.add(emp.getImmediateSupervisor());
-
-        // Pay
-        v.add(emp.getBasicSalary());
-        v.add(emp.getRiceSubsidy());
-        v.add(emp.getPhoneAllowance());
-        v.add(emp.getClothingAllowance());
-        v.add(emp.getSemiMonthlyRate());
-        v.add(emp.getHourlyRate());
-
-        return v;
+    private String safe(Object value) {
+        return value == null ? "" : value.toString();
     }
 
-    // =========================
-    // MonthYear type
-    // =========================
-    private static class MonthYear implements Comparable<MonthYear> {
-        final Month month;
-        final int year;
+    private double safeDouble(Object value) {
+        if (value == null) {
+            return 0.0;
+        }
 
-        MonthYear(Month month, int year) {
-            this.month = month;
-            this.year = year;
+        try {
+            return Double.parseDouble(value.toString());
+        } catch (Exception ex) {
+            return 0.0;
+        }
+    }
+
+    private record MonthYearItem(Month month, int year) implements Comparable<MonthYearItem> {
+
+        static MonthYearItem placeholder() {
+            return new MonthYearItem(null, 0);
         }
 
         boolean isPlaceholder() {
@@ -467,29 +420,27 @@ public class ViewEmployeePanel extends JFrame {
 
         @Override
         public String toString() {
-            if (isPlaceholder()) return "Select Month";
+            if (isPlaceholder()) {
+                return "Select Month";
+            }
             return month.getDisplayName(TextStyle.FULL, Locale.ENGLISH) + " " + year;
         }
 
         @Override
-        public int compareTo(MonthYear o) {
-            if (this.isPlaceholder()) return -1;
-            if (o.isPlaceholder()) return 1;
+        public int compareTo(MonthYearItem other) {
+            if (this.isPlaceholder()) {
+                return -1;
+            }
+            if (other.isPlaceholder()) {
+                return 1;
+            }
 
-            int c = Integer.compare(this.year, o.year);
-            if (c != 0) return c;
-            return Integer.compare(this.month.getValue(), o.month.getValue());
-        }
+            int yearCompare = Integer.compare(this.year, other.year);
+            if (yearCompare != 0) {
+                return yearCompare;
+            }
 
-        @Override
-        public boolean equals(Object obj) {
-            if (!(obj instanceof MonthYear other)) return false;
-            return this.year == other.year && this.month == other.month;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(month, year);
+            return Integer.compare(this.month.getValue(), other.month.getValue());
         }
     }
 }

@@ -1,56 +1,48 @@
 package gui;
 
-import model.Role;
-import model.UserAccount;
-
-import repository.CredentialRepository;
-import repository.EmployeeRepository;
+import service.EmployeeService;
+import service.UserAccountCreateRequest;
+import service.UserAccountDto;
+import service.UserAccountService;
+import service.UserAccountUpdateRequest;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.plaf.basic.BasicScrollBarUI;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
-
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.ArrayList;
 import java.util.List;
 
 public class UserAccountsPanel extends JPanel {
 
-    private final CredentialRepository credentialRepo;
-    private final EmployeeRepository employeeRepo;
+    private static final Color GRADIENT_START = new Color(255, 204, 229);
+    private static final Color GRADIENT_END = new Color(255, 229, 180);
+
+    private static final String[] COLUMN_NAMES = {
+            "Credential ID", "Username", "Role", "Employee #", "First Name", "Position"
+    };
+
+    private final UserAccountService userAccountService;
+    private final EmployeeService employeeService;
 
     private JTable table;
     private DefaultTableModel model;
     private JTextField searchField;
-
-    // Gradient background colors (same as other panels)
-    private final Color gradientStart = new Color(255, 204, 229);
-    private final Color gradientEnd   = new Color(255, 229, 180);
-
-    // Color gradientStart = new Color(255, 204, 229); 
-//        Color gradientEnd = new Color(255, 229, 180);
-    
-    // Columns (nicer like Employee table)
-    private final String[] columnNames = {
-            "Credential ID", "Username", "Role", "Employee #", "First Name", "Position"
-    };
-
-    // Right-click row menu
     private JPopupMenu rowMenu;
 
-    public UserAccountsPanel(CredentialRepository credentialRepo, EmployeeRepository employeeRepo) {
-        this.credentialRepo = credentialRepo;
-        this.employeeRepo = employeeRepo;
+    private List<UserAccountDto> currentRows = new ArrayList<>();
+
+    public UserAccountsPanel(UserAccountService userAccountService, EmployeeService employeeService) {
+        this.userAccountService = userAccountService;
+        this.employeeService = employeeService;
 
         setLayout(new BorderLayout());
         setOpaque(false);
         setBorder(new EmptyBorder(20, 50, 20, 50));
-
-        // Ensure employee cache is loaded (for name/position mapping)
-        this.employeeRepo.load();
 
         add(buildTopBar(), BorderLayout.NORTH);
         add(buildTable(), BorderLayout.CENTER);
@@ -59,14 +51,6 @@ public class UserAccountsPanel extends JPanel {
         refreshTable();
     }
 
-    // Convenience constructor if you want
-    // public UserAccountsPanel() {
-    //     this(new FileCredentialRepository(), new FileEmployeeRepository());
-    // }
-
-    // ==========================
-    // TOP BAR (CLEAN)
-    // ==========================
     private JPanel buildTopBar() {
         JPanel top = new JPanel(new BorderLayout(10, 10));
         top.setOpaque(false);
@@ -92,25 +76,25 @@ public class UserAccountsPanel extends JPanel {
         ));
         searchField.setToolTipText("Search username, role, employee #, name, position");
 
-        JButton searchBtn = new JButton("Search");
-        styleColoredButton(searchBtn, new Color(30, 144, 255), 90, 34);
-        searchBtn.addActionListener(e -> filterTable(searchField.getText().trim()));
+        JButton searchButton = new JButton("Search");
+        styleColoredButton(searchButton, new Color(30, 144, 255), 90, 34);
+        searchButton.addActionListener(e -> filterTable(searchField.getText().trim()));
 
-        JButton refreshBtn = new JButton("Refresh");
-        styleColoredButton(refreshBtn, Color.BLACK, 90, 34);
-        refreshBtn.addActionListener(e -> {
+        JButton refreshButton = new JButton("Refresh");
+        styleColoredButton(refreshButton, Color.BLACK, 90, 34);
+        refreshButton.addActionListener(e -> {
             searchField.setText("");
             refreshTable();
         });
 
-        JButton addBtn = new JButton("Add User");
-        styleColoredButton(addBtn, new Color(34, 139, 34), 110, 34);
-        addBtn.addActionListener(e -> showAddUserDialog());
+        JButton addButton = new JButton("Add User");
+        styleColoredButton(addButton, new Color(34, 139, 34), 110, 34);
+        addButton.addActionListener(e -> showAddUserDialog());
 
         right.add(searchField);
-        right.add(searchBtn);
-        right.add(refreshBtn);
-        right.add(addBtn);
+        right.add(searchButton);
+        right.add(refreshButton);
+        right.add(addButton);
 
         top.add(left, BorderLayout.WEST);
         top.add(right, BorderLayout.EAST);
@@ -118,14 +102,12 @@ public class UserAccountsPanel extends JPanel {
         return top;
     }
 
-    // ==========================
-    // TABLE
-    // ==========================
     private JScrollPane buildTable() {
-
-        model = new DefaultTableModel(columnNames, 0) {
+        model = new DefaultTableModel(COLUMN_NAMES, 0) {
             @Override
-            public boolean isCellEditable(int row, int column) { return false; }
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
         };
 
         table = new JTable(model);
@@ -141,25 +123,30 @@ public class UserAccountsPanel extends JPanel {
             table.getColumnModel().getColumn(i).setHeaderRenderer(headerRenderer);
         }
 
-        // Double-click => view details
         table.addMouseListener(new MouseAdapter() {
             @Override
-            public void mouseClicked(MouseEvent evt) {
-                if (evt.getClickCount() == 2 && table.getSelectedRow() != -1) {
+            public void mouseClicked(MouseEvent event) {
+                if (event.getClickCount() == 2 && table.getSelectedRow() != -1) {
                     showAccountDetailsPopup(table.getSelectedRow());
                 }
             }
         });
 
-        // Right-click context menu
         table.addMouseListener(new MouseAdapter() {
             @Override
-            public void mousePressed(MouseEvent e) { maybeShowMenu(e); }
+            public void mousePressed(MouseEvent e) {
+                maybeShowMenu(e);
+            }
+
             @Override
-            public void mouseReleased(MouseEvent e) { maybeShowMenu(e); }
+            public void mouseReleased(MouseEvent e) {
+                maybeShowMenu(e);
+            }
 
             private void maybeShowMenu(MouseEvent e) {
-                if (!e.isPopupTrigger()) return;
+                if (!e.isPopupTrigger()) {
+                    return;
+                }
 
                 int row = table.rowAtPoint(e.getPoint());
                 if (row >= 0) {
@@ -173,23 +160,21 @@ public class UserAccountsPanel extends JPanel {
         scrollPane.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
-
         scrollPane.getVerticalScrollBar().setUI(new ModernScrollBarUI());
         scrollPane.getHorizontalScrollBar().setUI(new ModernScrollBarUI());
 
         return scrollPane;
     }
 
-    // ==========================
-    // RIGHT CLICK MENU
-    // ==========================
     private void buildRowMenu() {
         rowMenu = new JPopupMenu();
 
         JMenuItem viewItem = new JMenuItem("View Details");
         viewItem.addActionListener(e -> {
             int row = table.getSelectedRow();
-            if (row != -1) showAccountDetailsPopup(row);
+            if (row != -1) {
+                showAccountDetailsPopup(row);
+            }
         });
 
         JMenuItem updateItem = new JMenuItem("Update...");
@@ -204,14 +189,10 @@ public class UserAccountsPanel extends JPanel {
         rowMenu.add(deleteItem);
     }
 
-    // ==========================
-    // CRUD FUNCTIONS
-    // ==========================
     private void showAddUserDialog() {
-
-        JTextField username = new JTextField();
-        JPasswordField password = new JPasswordField();
-        JTextField employeeNo = new JTextField();
+        JTextField usernameField = new JTextField();
+        JPasswordField passwordField = new JPasswordField();
+        JTextField employeeNoField = new JTextField();
 
         JComboBox<String> roleBox = new JComboBox<>(new String[]{
                 "EMPLOYEE", "HRADMIN", "IT"
@@ -219,122 +200,148 @@ public class UserAccountsPanel extends JPanel {
 
         JPanel panel = new JPanel(new GridLayout(0, 1, 8, 8));
         panel.add(new JLabel("Username:"));
-        panel.add(username);
+        panel.add(usernameField);
         panel.add(new JLabel("Password:"));
-        panel.add(password);
+        panel.add(passwordField);
         panel.add(new JLabel("Role:"));
         panel.add(roleBox);
         panel.add(new JLabel("Employee #:"));
-        panel.add(employeeNo);
+        panel.add(employeeNoField);
 
         int result = JOptionPane.showConfirmDialog(
-                this, panel, "Add User Account",
+                this,
+                panel,
+                "Add User Account",
                 JOptionPane.OK_CANCEL_OPTION,
                 JOptionPane.PLAIN_MESSAGE
         );
 
-        if (result != JOptionPane.OK_OPTION) return;
-
-        String u = username.getText().trim();
-        String p = new String(password.getPassword()).trim();
-        String emp = employeeNo.getText().trim();
-        Role r = Role.from(roleBox.getSelectedItem().toString());
-
-        if (u.isEmpty() || p.isEmpty() || emp.isEmpty()) {
-            JOptionPane.showMessageDialog(this,
-                    "❌ Username, password, and Employee # are required.",
-                    "Validation Error",
-                    JOptionPane.ERROR_MESSAGE);
+        if (result != JOptionPane.OK_OPTION) {
             return;
         }
 
-        // Optional: validate employee exists
-        String[] empRow = employeeRepo.findRowByEmployeeNo(emp);
-        if (empRow == null) {
+        String username = safe(usernameField.getText());
+        String password = safe(new String(passwordField.getPassword()));
+        String employeeNo = safe(employeeNoField.getText());
+        String role = safe(roleBox.getSelectedItem());
+
+        if (username.isEmpty() || password.isEmpty() || employeeNo.isEmpty()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Username, password, and Employee # are required.",
+                    "Validation Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
+
+        if (!employeeService.existsByEmployeeId(employeeNo)) {
             int confirm = JOptionPane.showConfirmDialog(
                     this,
-                    "Employee # not found in employee.txt.\nDo you still want to create this account?",
+                    "Employee # not found in employee records.\nDo you still want to create this account?",
                     "Employee Not Found",
                     JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE
             );
-            if (confirm != JOptionPane.YES_OPTION) return;
+
+            if (confirm != JOptionPane.YES_OPTION) {
+                return;
+            }
         }
 
-        if (credentialRepo.findByUsername(u) != null) {
-            JOptionPane.showMessageDialog(this,
-                    "❌ Username already exists.",
+        if (userAccountService.findByUsername(username) != null) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Username already exists.",
                     "Duplicate Error",
-                    JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
         }
 
-        boolean ok = credentialRepo.add(u, p, r, emp);
+        boolean added = userAccountService.add(new UserAccountCreateRequest(
+                username,
+                password,
+                role,
+                employeeNo
+        ));
 
-        if (ok) {
-            JOptionPane.showMessageDialog(this, "✅ User added successfully!");
+        if (added) {
+            JOptionPane.showMessageDialog(this, "User added successfully.");
             refreshTable();
         } else {
-            JOptionPane.showMessageDialog(this, "❌ Failed to add user.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Failed to add user.", "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-        private void showUpdateDialog() {
-        int row = table.getSelectedRow();
-        if (row == -1) {
+    private void showUpdateDialog() {
+        UserAccountDto selected = getSelectedAccount();
+        if (selected == null) {
             JOptionPane.showMessageDialog(this, "Please select a user first.");
             return;
         }
 
-        row = table.convertRowIndexToModel(row);
-
-        String username = model.getValueAt(row, 1).toString();
-        String oldRole = model.getValueAt(row, 2).toString();
-        String oldEmpNo = model.getValueAt(row, 3).toString();
-
-        JPasswordField newPassword = new JPasswordField();
+        JPasswordField newPasswordField = new JPasswordField();
         JComboBox<String> roleBox = new JComboBox<>(new String[]{"EMPLOYEE", "HRADMIN", "IT"});
-        roleBox.setSelectedItem(oldRole);
-        JTextField employeeNoField = new JTextField(oldEmpNo);
+        roleBox.setSelectedItem(safe(selected.getRole()));
+
+        JTextField employeeNoField = new JTextField(safe(selected.getEmployeeNumber()));
 
         JPanel panel = new JPanel(new GridLayout(0, 1, 8, 8));
-        panel.add(new JLabel("Username: " + username));
+        panel.add(new JLabel("Username: " + safe(selected.getUsername())));
         panel.add(new JLabel("New Password (leave blank to keep current):"));
-        panel.add(newPassword);
+        panel.add(newPasswordField);
         panel.add(new JLabel("Role:"));
         panel.add(roleBox);
         panel.add(new JLabel("Employee # (optional update):"));
         panel.add(employeeNoField);
 
         int result = JOptionPane.showConfirmDialog(
-                this, panel, "Update User Account",
+                this,
+                panel,
+                "Update User Account",
                 JOptionPane.OK_CANCEL_OPTION,
                 JOptionPane.PLAIN_MESSAGE
         );
-        if (result != JOptionPane.OK_OPTION) return;
 
-        String pw = new String(newPassword.getPassword()).trim();
-        Role newRole = Role.from(roleBox.getSelectedItem().toString());
-        String newEmpNo = employeeNoField.getText().trim();
+        if (result != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        String newPassword = safe(new String(newPasswordField.getPassword()));
+        String newRole = safe(roleBox.getSelectedItem());
+        String newEmployeeNo = safe(employeeNoField.getText());
 
         boolean changed = false;
         boolean ok = true;
 
-        // role
-        if (!newRole.name().equalsIgnoreCase(oldRole)) {
-            ok &= credentialRepo.updateRole(username, newRole);
+        if (!newRole.equalsIgnoreCase(safe(selected.getRole()))) {
+            ok &= userAccountService.update(new UserAccountUpdateRequest(
+                    safe(selected.getUsername()),
+                    null,
+                    newRole,
+                    null
+            ));
             changed = true;
         }
 
-        // password
-        if (!pw.isEmpty()) {
-            ok &= credentialRepo.updatePassword(username, pw);
+        if (!newPassword.isEmpty()) {
+            ok &= userAccountService.update(new UserAccountUpdateRequest(
+                    safe(selected.getUsername()),
+                    newPassword,
+                    null,
+                    null
+            ));
             changed = true;
         }
 
-        // employee #
-        if (!newEmpNo.isEmpty() && !newEmpNo.equals(oldEmpNo)) {
-            ok &= credentialRepo.updateEmployeeNo(username, newEmpNo);
+        if (!newEmployeeNo.isEmpty() && !newEmployeeNo.equals(safe(selected.getEmployeeNumber()))) {
+            ok &= userAccountService.update(new UserAccountUpdateRequest(
+                    safe(selected.getUsername()),
+                    null,
+                    null,
+                    newEmployeeNo
+            ));
             changed = true;
         }
 
@@ -344,79 +351,58 @@ public class UserAccountsPanel extends JPanel {
         }
 
         if (ok) {
-            JOptionPane.showMessageDialog(this, "✅ Account updated successfully!");
+            JOptionPane.showMessageDialog(this, "Account updated successfully.");
             refreshTable();
         } else {
-            JOptionPane.showMessageDialog(this, "❌ Failed to update account.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Failed to update account.", "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void deleteSelectedAccount() {
-
-        int row = table.getSelectedRow();
-        if (row == -1) {
+        UserAccountDto selected = getSelectedAccount();
+        if (selected == null) {
             JOptionPane.showMessageDialog(this, "Please select a user first.");
             return;
         }
 
-        row = table.convertRowIndexToModel(row);
-        String username = model.getValueAt(row, 1).toString();
-
         int confirm = JOptionPane.showConfirmDialog(
                 this,
-                "Are you sure you want to delete account:\n" + username + " ?",
+                "Are you sure you want to delete account:\n" + safe(selected.getUsername()) + " ?",
                 "Confirm Delete",
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE
         );
 
-        if (confirm != JOptionPane.YES_OPTION) return;
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
 
-        boolean ok = credentialRepo.delete(username);
+        boolean deleted = userAccountService.deleteByUsername(safe(selected.getUsername()));
 
-        if (ok) {
-            JOptionPane.showMessageDialog(this, "✅ Account deleted.");
+        if (deleted) {
+            JOptionPane.showMessageDialog(this, "Account deleted.");
             refreshTable();
         } else {
-            JOptionPane.showMessageDialog(this, "❌ Failed to delete account.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Failed to delete account.", "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    // ==========================
-    // DATA LOADING
-    // ==========================
     private void refreshTable() {
+        currentRows = userAccountService.findAll();
+        if (currentRows == null) {
+            currentRows = new ArrayList<>();
+        }
+
         model.setRowCount(0);
 
-        // reload employee cache in case new employees were added
-        employeeRepo.load();
-
-        List<UserAccount> accounts = credentialRepo.findAll();
-
-        for (UserAccount acc : accounts) {
-            String empNo = acc.getEmployeeNumber();
-
-            String firstName = "(Unknown)";
-            String position  = "(Unknown)";
-
-            String[] row = employeeRepo.findRowByEmployeeNo(empNo);
-            if (row != null) {
-                // your headers include First Name and Position
-                List<String> headers = employeeRepo.getHeaders();
-                int fnIdx = headers.indexOf("First Name");
-                int posIdx = headers.indexOf("Position");
-
-                if (fnIdx >= 0 && fnIdx < row.length) firstName = row[fnIdx];
-                if (posIdx >= 0 && posIdx < row.length) position = row[posIdx];
-            }
-
+        for (UserAccountDto account : currentRows) {
             model.addRow(new Object[]{
-                    acc.getCredentialId(),
-                    acc.getUsername(),
-                    acc.getRole().name(),
-                    empNo,
-                    firstName,
-                    position
+                    safe(account.getCredentialId()),
+                    safe(account.getUsername()),
+                    safe(account.getRole()),
+                    safe(account.getEmployeeNumber()),
+                    safe(account.getFirstName()),
+                    safe(account.getPosition())
             });
         }
     }
@@ -427,75 +413,69 @@ public class UserAccountsPanel extends JPanel {
             return;
         }
 
-        String q = query.toLowerCase();
+        String q = query.toLowerCase().trim();
         model.setRowCount(0);
 
-        employeeRepo.load();
-        List<UserAccount> accounts = credentialRepo.findAll();
-
-        for (UserAccount acc : accounts) {
-
-            String empNo = acc.getEmployeeNumber();
-            String firstName = "(Unknown)";
-            String position  = "(Unknown)";
-
-            String[] row = employeeRepo.findRowByEmployeeNo(empNo);
-            if (row != null) {
-                List<String> headers = employeeRepo.getHeaders();
-                int fnIdx = headers.indexOf("First Name");
-                int posIdx = headers.indexOf("Position");
-
-                if (fnIdx >= 0 && fnIdx < row.length) firstName = row[fnIdx];
-                if (posIdx >= 0 && posIdx < row.length) position = row[posIdx];
-            }
-
+        for (UserAccountDto account : currentRows) {
             boolean match =
-                    acc.getUsername().toLowerCase().contains(q) ||
-                    acc.getRole().name().toLowerCase().contains(q) ||
-                    (empNo != null && empNo.toLowerCase().contains(q)) ||
-                    firstName.toLowerCase().contains(q) ||
-                    position.toLowerCase().contains(q);
+                    safe(account.getUsername()).toLowerCase().contains(q)
+                            || safe(account.getRole()).toLowerCase().contains(q)
+                            || safe(account.getEmployeeNumber()).toLowerCase().contains(q)
+                            || safe(account.getFirstName()).toLowerCase().contains(q)
+                            || safe(account.getPosition()).toLowerCase().contains(q);
 
             if (match) {
                 model.addRow(new Object[]{
-                        acc.getCredentialId(),
-                        acc.getUsername(),
-                        acc.getRole().name(),
-                        empNo,
-                        firstName,
-                        position
+                        safe(account.getCredentialId()),
+                        safe(account.getUsername()),
+                        safe(account.getRole()),
+                        safe(account.getEmployeeNumber()),
+                        safe(account.getFirstName()),
+                        safe(account.getPosition())
                 });
             }
         }
     }
 
     private void showAccountDetailsPopup(int selectedRow) {
-
         int row = table.convertRowIndexToModel(selectedRow);
+        if (row < 0 || row >= currentRows.size()) {
+            return;
+        }
 
-        String credentialId = model.getValueAt(row, 0).toString();
-        String username     = model.getValueAt(row, 1).toString();
-        String role         = model.getValueAt(row, 2).toString();
-        String employeeNo   = model.getValueAt(row, 3).toString();
-        String firstName    = model.getValueAt(row, 4).toString();
-        String position     = model.getValueAt(row, 5).toString();
+        UserAccountDto account = currentRows.get(row);
 
         JPanel panel = new JPanel(new GridLayout(0, 1, 6, 6));
-        panel.add(new JLabel("Credential ID: " + credentialId));
-        panel.add(new JLabel("Username: " + username));
-        panel.add(new JLabel("Role: " + role));
-        panel.add(new JLabel("Employee #: " + employeeNo));
-        panel.add(new JLabel("First Name: " + firstName));
-        panel.add(new JLabel("Position: " + position));
+        panel.add(new JLabel("Credential ID: " + safe(account.getCredentialId())));
+        panel.add(new JLabel("Username: " + safe(account.getUsername())));
+        panel.add(new JLabel("Role: " + safe(account.getRole())));
+        panel.add(new JLabel("Employee #: " + safe(account.getEmployeeNumber())));
+        panel.add(new JLabel("First Name: " + safe(account.getFirstName())));
+        panel.add(new JLabel("Position: " + safe(account.getPosition())));
         panel.add(new JLabel(" "));
         panel.add(new JLabel("Tip: Right-click a row for Update/Delete"));
 
         JOptionPane.showMessageDialog(this, panel, "User Account Details", JOptionPane.INFORMATION_MESSAGE);
     }
 
-    // ==========================
-    // UI HELPERS
-    // ==========================
+    private UserAccountDto getSelectedAccount() {
+        int row = table.getSelectedRow();
+        if (row == -1) {
+            return null;
+        }
+
+        int modelRow = table.convertRowIndexToModel(row);
+        if (modelRow < 0 || modelRow >= currentRows.size()) {
+            return null;
+        }
+
+        return currentRows.get(modelRow);
+    }
+
+    private String safe(Object value) {
+        return value == null ? "" : value.toString().trim();
+    }
+
     private static class JTableHeaderRenderer extends DefaultTableCellRenderer {
         public JTableHeaderRenderer() {
             setOpaque(true);
@@ -508,19 +488,27 @@ public class UserAccountsPanel extends JPanel {
 
     private class ResponsiveCellRenderer extends DefaultTableCellRenderer {
         @Override
-        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
-                                                       boolean hasFocus, int row, int column) {
-            Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+        public Component getTableCellRendererComponent(
+                JTable table,
+                Object value,
+                boolean isSelected,
+                boolean hasFocus,
+                int row,
+                int column
+        ) {
+            Component component = super.getTableCellRendererComponent(
+                    table, value, isSelected, hasFocus, row, column
+            );
 
             if (!isSelected) {
-                c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(230, 240, 255));
+                component.setBackground(row % 2 == 0 ? Color.WHITE : new Color(230, 240, 255));
             }
 
             int width = UserAccountsPanel.this.getWidth();
             int fontSize = width < 700 ? 11 : (width < 900 ? 12 : 14);
-            c.setFont(new Font("SansSerif", Font.PLAIN, fontSize));
+            component.setFont(new Font("SansSerif", Font.PLAIN, fontSize));
 
-            return c;
+            return component;
         }
     }
 
@@ -579,7 +567,7 @@ public class UserAccountsPanel extends JPanel {
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
         Graphics2D g2d = (Graphics2D) g;
-        g2d.setPaint(new GradientPaint(0, 0, gradientStart, 0, getHeight(), gradientEnd));
+        g2d.setPaint(new GradientPaint(0, 0, GRADIENT_START, 0, getHeight(), GRADIENT_END));
         g2d.fillRect(0, 0, getWidth(), getHeight());
     }
 }

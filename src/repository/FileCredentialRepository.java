@@ -1,5 +1,6 @@
 package repository;
 
+import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
 import com.opencsv.CSVWriter;
@@ -21,6 +22,7 @@ import java.util.Objects;
 public class FileCredentialRepository implements CredentialRepository {
 
     private static final String CREDENTIALS_FILE_PATH = "data/credentials.csv";
+    private static final char FILE_SEPARATOR = ',';
 
     private final List<String> headers = new ArrayList<>();
     private final List<Rec> records = new ArrayList<>();
@@ -44,16 +46,28 @@ public class FileCredentialRepository implements CredentialRepository {
             return;
         }
 
-        try (CSVReader reader = new CSVReaderBuilder(new FileReader(file)).build()) {
-            String[] headerRow = reader.readNext();
+        try (CSVReader reader = new CSVReaderBuilder(new FileReader(file))
+                .withCSVParser(new CSVParserBuilder().withSeparator(FILE_SEPARATOR).build())
+                .build()) {
 
-            if (headerRow == null || headerRow.length == 0) {
+            String[] firstRow = reader.readNext();
+
+            if (firstRow == null || firstRow.length == 0) {
                 headers.addAll(Arrays.asList(defaultHeaders()));
                 return;
             }
 
-            for (String header : headerRow) {
-                headers.add(clean(header));
+            String[] cleanedFirstRow = cleanRow(firstRow);
+
+            if (looksLikeHeader(cleanedFirstRow)) {
+                headers.addAll(Arrays.asList(cleanedFirstRow));
+            } else {
+                headers.addAll(Arrays.asList(defaultHeaders()));
+
+                Rec firstRecord = parseRow(adjustRowLength(cleanedFirstRow, headers.size()));
+                if (firstRecord != null) {
+                    records.add(firstRecord);
+                }
             }
 
             String[] row;
@@ -99,12 +113,12 @@ public class FileCredentialRepository implements CredentialRepository {
     public UserAccount validate(String username, String password) {
         load();
 
-        String targetUsername = safe(username);
-        String targetPassword = safe(password);
+        String uname = safe(username);
+        String pwd = safe(password);
 
         for (Rec rec : records) {
-            if (rec.username.equalsIgnoreCase(targetUsername)
-                    && rec.password.equals(targetPassword)) {
+            if (safe(rec.username).equalsIgnoreCase(uname)
+                    && safe(rec.password).equals(pwd)) {
                 return toUserAccount(rec);
             }
         }
@@ -224,8 +238,8 @@ public class FileCredentialRepository implements CredentialRepository {
         ensureHeadersLoaded();
 
         try (ICSVWriter writer = new CSVWriterBuilder(new FileWriter(CREDENTIALS_FILE_PATH))
-                .withSeparator(CSVWriter.DEFAULT_SEPARATOR)
-                .withQuoteChar(CSVWriter.DEFAULT_QUOTE_CHARACTER)
+                .withSeparator(FILE_SEPARATOR)
+                .withQuoteChar(CSVWriter.NO_QUOTE_CHARACTER)
                 .build()) {
 
             writer.writeNext(headers.toArray(new String[0]));
@@ -246,6 +260,29 @@ public class FileCredentialRepository implements CredentialRepository {
         if (headers.isEmpty()) {
             headers.addAll(Arrays.asList(defaultHeaders()));
         }
+    }
+
+    private boolean looksLikeHeader(String[] row) {
+        if (row == null || row.length == 0) {
+            return false;
+        }
+
+        for (String value : row) {
+            String normalized = normalizeHeader(value);
+
+            if (normalized.equals("id")
+                    || normalized.equals("credentialid")
+                    || normalized.equals("credentialsid")
+                    || normalized.equals("username")
+                    || normalized.equals("password")
+                    || normalized.equals("role")
+                    || normalized.equals("employeeno")
+                    || normalized.equals("employeeid")) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private Rec findRec(String username) {
@@ -321,7 +358,18 @@ public class FileCredentialRepository implements CredentialRepository {
     }
 
     private int getIdIndex() {
-        return findFirstMatchingHeader("ID", "Id", "UserID", "AccountID");
+        return findFirstMatchingHeader(
+                "ID",
+                "Id",
+                "UserID",
+                "AccountID",
+                "CredentialID",
+                "credentialID",
+                "CredentialId",
+                "credentialId",
+                "CredentialsID",
+                "credentialsID"
+        );
     }
 
     private int getUsernameIndex() {

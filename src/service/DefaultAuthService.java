@@ -10,12 +10,15 @@ import java.util.Optional;
 
 public class DefaultAuthService implements AuthService {
 
-    private final CredentialRepository credentialRepo;
-    private final EmployeeRepository employeeRepo;
+    private final CredentialRepository credentialRepository;
+    private final EmployeeRepository employeeRepository;
 
-    public DefaultAuthService(CredentialRepository credentialRepo, EmployeeRepository employeeRepo) {
-        this.credentialRepo = Objects.requireNonNull(credentialRepo, "credentialRepo is required");
-        this.employeeRepo = Objects.requireNonNull(employeeRepo, "employeeRepo is required");
+    public DefaultAuthService(
+            CredentialRepository credentialRepository,
+            EmployeeRepository employeeRepository
+    ) {
+        this.credentialRepository = Objects.requireNonNull(credentialRepository, "credentialRepository is required");
+        this.employeeRepository = Objects.requireNonNull(employeeRepository, "employeeRepository is required");
     }
 
     @Override
@@ -27,15 +30,15 @@ public class DefaultAuthService implements AuthService {
             throw new IllegalArgumentException("Username and password are required.");
         }
 
-        credentialRepo.load();
-        employeeRepo.load();
+        credentialRepository.load();
+        employeeRepository.load();
 
-        UserAccount account = credentialRepo.validate(cleanUsername, cleanPassword);
+        UserAccount account = credentialRepository.validate(cleanUsername, cleanPassword);
         if (account == null) {
             return null;
         }
 
-        Optional<Employee> employeeOpt = employeeRepo.findById(account.getEmployeeNumber());
+        Optional<Employee> employeeOpt = employeeRepository.findById(account.getEmployeeNumber());
 
         String firstName = "(Unknown)";
         String position = "(Unknown)";
@@ -47,10 +50,10 @@ public class DefaultAuthService implements AuthService {
         }
 
         return new AuthenticatedUser(
-                account.getCredentialId(),
-                account.getUsername(),
+                safe(account.getCredentialId()),
+                safe(account.getUsername()),
                 account.getRole(),
-                account.getEmployeeNumber(),
+                safe(account.getEmployeeNumber()),
                 firstName,
                 position
         );

@@ -2,9 +2,10 @@ package gui;
 
 import service.AuthService;
 import service.AuthenticatedUser;
-import service.UserAccountService;
 import service.EmployeeService;
 import service.LeaveService;
+import service.PayrollService;
+import service.UserAccountService;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -15,14 +16,29 @@ import java.net.URL;
 
 public class DashboardPanel extends JFrame {
 
+    private static final Color SIDEBAR_COLOR = Color.WHITE;
+    private static final Color GRADIENT_START = new Color(255, 204, 229);
+    private static final Color GRADIENT_END = new Color(255, 229, 180);
+    private static final Color NAV_HOVER_COLOR = new Color(240, 240, 240);
+
+    private static final Font BOLD_FONT = new Font("Segoe UI", Font.BOLD, 16);
+    private static final Font REGULAR_FONT = new Font("Segoe UI", Font.PLAIN, 14);
+
+    private static final String CARD_EMPLOYEE = "Employee";
+    private static final String CARD_LEAVE_REQUEST = "LeaveRequest";
+    private static final String CARD_LEAVE_APPROVALS = "LeaveApprovals";
+    private static final String CARD_LEAVE_HISTORY = "LeaveHistory";
+    private static final String CARD_USER_ACCOUNTS = "UserAccounts";
+
     private final CardLayout cardLayout = new CardLayout();
-    private final JPanel contentPanel;
+    private final JPanel contentPanel = new GradientPanel();
 
     private final AuthenticatedUser currentUser;
     private final AuthService authService;
     private final EmployeeService employeeService;
     private final UserAccountService userAccountService;
     private final LeaveService leaveService;
+    private final PayrollService payrollService;
 
     private final EmployeeManagementPanel employeePanel;
     private final LeaveRequestPanel leaveRequestPanel;
@@ -35,156 +51,186 @@ public class DashboardPanel extends JFrame {
             AuthService authService,
             EmployeeService employeeService,
             UserAccountService userAccountService,
-            LeaveService leaveService
+            LeaveService leaveService,
+            PayrollService payrollService
     ) {
         this.currentUser = currentUser;
         this.authService = authService;
         this.employeeService = employeeService;
         this.userAccountService = userAccountService;
         this.leaveService = leaveService;
+        this.payrollService = payrollService;
 
-        setTitle("MotorPH Dashboard");
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1000, 650);
-        setLocationRelativeTo(null);
-        setLayout(new BorderLayout());
-        setMinimumSize(new Dimension(800, 500));
-
-        Color sidebarColor = Color.WHITE;
-        Color gradientStart = new Color(255, 204, 229);
-        Color gradientEnd = new Color(255, 229, 180);
-        Font boldFont = new Font("Segoe UI", Font.BOLD, 16);
-        Font regularFont = new Font("Segoe UI", Font.PLAIN, 14);
-
-        this.employeePanel = new EmployeeManagementPanel(employeeService, currentUser);
+        this.employeePanel = new EmployeeManagementPanel(employeeService, payrollService, currentUser);
         this.leaveRequestPanel = new LeaveRequestPanel(leaveService, currentUser);
         this.leaveApprovalPanel = new LeaveApprovalPanel(leaveService, currentUser);
         this.leaveHistoryPanel = new EmployeeLeaveHistoryPanel(leaveService, currentUser);
         this.userAccountsPanel = new UserAccountsPanel(userAccountService, employeeService);
 
-        JPanel sidebar = new JPanel(new BorderLayout());
-        sidebar.setBackground(sidebarColor);
-        sidebar.setPreferredSize(new Dimension(280, getHeight()));
-        sidebar.setBorder(new EmptyBorder(20, 20, 20, 20));
+        setupFrame();
+        buildUI();
+    }
 
-        JPanel profilePanel = buildProfilePanel(sidebarColor, boldFont, regularFont);
+    private void setupFrame() {
+        setTitle("MotorPH Dashboard");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(1000, 650);
+        setMinimumSize(new Dimension(800, 500));
+        setLocationRelativeTo(null);
+        setLayout(new BorderLayout());
+    }
 
-        JPanel navPanel = new JPanel();
-        navPanel.setLayout(new BoxLayout(navPanel, BoxLayout.Y_AXIS));
-        navPanel.setBackground(sidebarColor);
-        navPanel.setBorder(new EmptyBorder(20, 0, 0, 0));
-        navPanel.add(Box.createVerticalStrut(30));
+    private void buildUI() {
+        String role = getCurrentRoleName();
 
-        JLabel generalLabel = new JLabel("General");
-        generalLabel.setFont(boldFont);
-        generalLabel.setBorder(new EmptyBorder(0, 10, 10, 0));
-        generalLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        navPanel.add(generalLabel);
-
-        contentPanel = new JPanel(cardLayout) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                Graphics2D g2d = (Graphics2D) g;
-                g2d.setPaint(new GradientPaint(0, 0, gradientStart, 0, getHeight(), gradientEnd));
-                g2d.fillRect(0, 0, getWidth(), getHeight());
-            }
-        };
-
-        contentPanel.add(leaveRequestPanel, "LeaveRequest");
-        contentPanel.add(leaveHistoryPanel, "LeaveHistory");
-
-        String role = roleName(currentUser);
-
-        if (isEmployeeModuleAllowed(role)) {
-            JButton employeeBtn = createNavButton("Employee", "employee.png");
-            navPanel.add(employeeBtn);
-            navPanel.add(Box.createVerticalStrut(5));
-
-            contentPanel.add(employeePanel, "Employee");
-            employeeBtn.addActionListener(e -> cardLayout.show(contentPanel, "Employee"));
-        }
-
-        JButton leaveRequestBtn = createNavButton("Leave Request", "employee.png");
-        navPanel.add(leaveRequestBtn);
-        navPanel.add(Box.createVerticalStrut(5));
-        leaveRequestBtn.addActionListener(e -> cardLayout.show(contentPanel, "LeaveRequest"));
-
-        if (isLeaveApprovalAllowed(role)) {
-            JButton leaveApprovalsBtn = createNavButton("Leave Approvals", "employee.png");
-            navPanel.add(leaveApprovalsBtn);
-            navPanel.add(Box.createVerticalStrut(5));
-
-            contentPanel.add(leaveApprovalPanel, "LeaveApprovals");
-            leaveApprovalsBtn.addActionListener(e -> cardLayout.show(contentPanel, "LeaveApprovals"));
-        }
-
-        JButton leaveHistoryBtn = createNavButton("My Leaves", "employee.png");
-        navPanel.add(leaveHistoryBtn);
-        navPanel.add(Box.createVerticalStrut(5));
-        leaveHistoryBtn.addActionListener(e -> cardLayout.show(contentPanel, "LeaveHistory"));
-
-        if (isUserAccountsAllowed(role)) {
-            JButton userAccountsBtn = createNavButton("User Accounts", "employee.png");
-            navPanel.add(userAccountsBtn);
-            navPanel.add(Box.createVerticalStrut(5));
-
-            contentPanel.add(userAccountsPanel, "UserAccounts");
-            userAccountsBtn.addActionListener(e -> cardLayout.show(contentPanel, "UserAccounts"));
-        }
-
-        JButton logoutButton = createNavButton("Log-out", "logout.png");
-        logoutButton.setForeground(Color.GRAY);
-        logoutButton.addActionListener(e -> {
-            dispose();
-            SwingUtilities.invokeLater(() -> new LoginPanel(authService).setVisible(true));
-        });
-
-        sidebar.add(profilePanel, BorderLayout.NORTH);
-        sidebar.add(navPanel, BorderLayout.CENTER);
-        sidebar.add(logoutButton, BorderLayout.SOUTH);
+        JPanel sidebar = buildSidebar(role);
+        configureContentPanel(role);
 
         add(sidebar, BorderLayout.WEST);
         add(contentPanel, BorderLayout.CENTER);
 
         showDefaultPage(role);
-
-        setVisible(true);
     }
 
-    private JPanel buildProfilePanel(Color sidebarColor, Font boldFont, Font regularFont) {
+    private JPanel buildSidebar(String role) {
+        JPanel sidebar = new JPanel(new BorderLayout());
+        sidebar.setBackground(SIDEBAR_COLOR);
+        sidebar.setPreferredSize(new Dimension(280, getHeight()));
+        sidebar.setBorder(new EmptyBorder(20, 20, 20, 20));
+
+        JPanel profilePanel = buildProfilePanel();
+        JPanel navigationPanel = buildNavigationPanel(role);
+        JButton logoutButton = buildLogoutButton();
+
+        sidebar.add(profilePanel, BorderLayout.NORTH);
+        sidebar.add(navigationPanel, BorderLayout.CENTER);
+        sidebar.add(logoutButton, BorderLayout.SOUTH);
+
+        return sidebar;
+    }
+
+    private JPanel buildProfilePanel() {
         JPanel profilePanel = new JPanel(new BorderLayout(10, 0));
-        profilePanel.setBackground(sidebarColor);
+        profilePanel.setBackground(SIDEBAR_COLOR);
 
         JLabel profileIcon = new JLabel(loadImageIcon("/assets/userprofile.png", 40, 40));
         profilePanel.add(profileIcon, BorderLayout.WEST);
 
         JPanel namePanel = new JPanel();
         namePanel.setLayout(new BoxLayout(namePanel, BoxLayout.Y_AXIS));
-        namePanel.setBackground(sidebarColor);
+        namePanel.setBackground(SIDEBAR_COLOR);
 
         JLabel userName = new JLabel(safe(currentUser.getFirstName(), "(Unknown)"));
         JLabel userRole = new JLabel(safe(currentUser.getPosition(), "(Unknown)"));
 
-        userName.setFont(boldFont);
-        userRole.setFont(regularFont);
+        userName.setFont(BOLD_FONT);
+        userRole.setFont(REGULAR_FONT);
         userRole.setForeground(Color.GRAY);
 
         namePanel.add(userName);
         namePanel.add(userRole);
 
         profilePanel.add(namePanel, BorderLayout.CENTER);
+
         return profilePanel;
+    }
+
+    private JPanel buildNavigationPanel(String role) {
+        JPanel navPanel = new JPanel();
+        navPanel.setLayout(new BoxLayout(navPanel, BoxLayout.Y_AXIS));
+        navPanel.setBackground(SIDEBAR_COLOR);
+        navPanel.setBorder(new EmptyBorder(20, 0, 0, 0));
+
+        navPanel.add(Box.createVerticalStrut(30));
+
+        JLabel generalLabel = new JLabel("General");
+        generalLabel.setFont(BOLD_FONT);
+        generalLabel.setBorder(new EmptyBorder(0, 10, 10, 0));
+        generalLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        navPanel.add(generalLabel);
+
+        if (isEmployeeModuleAllowed(role)) {
+            navPanel.add(createNavigationButton("Employee", "employee.png", CARD_EMPLOYEE));
+            navPanel.add(Box.createVerticalStrut(5));
+        }
+
+        navPanel.add(createNavigationButton("Leave Request", "employee.png", CARD_LEAVE_REQUEST));
+        navPanel.add(Box.createVerticalStrut(5));
+
+        if (isLeaveApprovalAllowed(role)) {
+            navPanel.add(createNavigationButton("Leave Approvals", "employee.png", CARD_LEAVE_APPROVALS));
+            navPanel.add(Box.createVerticalStrut(5));
+        }
+
+        navPanel.add(createNavigationButton("My Leaves", "employee.png", CARD_LEAVE_HISTORY));
+        navPanel.add(Box.createVerticalStrut(5));
+
+        if (isUserAccountsAllowed(role)) {
+            navPanel.add(createNavigationButton("User Accounts", "employee.png", CARD_USER_ACCOUNTS));
+            navPanel.add(Box.createVerticalStrut(5));
+        }
+
+        return navPanel;
+    }
+
+    private JButton buildLogoutButton() {
+        JButton logoutButton = createNavButton("Log-out", "logout.png");
+        logoutButton.setForeground(Color.GRAY);
+        logoutButton.addActionListener(e -> logout());
+        return logoutButton;
+    }
+
+    private void configureContentPanel(String role) {
+        contentPanel.setLayout(cardLayout);
+
+        contentPanel.add(leaveRequestPanel, CARD_LEAVE_REQUEST);
+        contentPanel.add(leaveHistoryPanel, CARD_LEAVE_HISTORY);
+
+        if (isEmployeeModuleAllowed(role)) {
+            contentPanel.add(employeePanel, CARD_EMPLOYEE);
+        }
+
+        if (isLeaveApprovalAllowed(role)) {
+            contentPanel.add(leaveApprovalPanel, CARD_LEAVE_APPROVALS);
+        }
+
+        if (isUserAccountsAllowed(role)) {
+            contentPanel.add(userAccountsPanel, CARD_USER_ACCOUNTS);
+        }
+    }
+
+    private JButton createNavigationButton(String text, String iconFileName, String cardName) {
+        JButton button = createNavButton(text, iconFileName);
+        button.addActionListener(e -> showCard(cardName));
+        return button;
+    }
+
+    private void showCard(String cardName) {
+        cardLayout.show(contentPanel, cardName);
     }
 
     private void showDefaultPage(String role) {
         if (isUserAccountsAllowed(role)) {
-            cardLayout.show(contentPanel, "UserAccounts");
+            showCard(CARD_USER_ACCOUNTS);
         } else if (isEmployeeModuleAllowed(role)) {
-            cardLayout.show(contentPanel, "Employee");
+            showCard(CARD_EMPLOYEE);
         } else {
-            cardLayout.show(contentPanel, "LeaveRequest");
+            showCard(CARD_LEAVE_REQUEST);
         }
+    }
+
+    private void logout() {
+        dispose();
+
+        SwingUtilities.invokeLater(() ->
+                new LoginPanel(
+                        authService,
+                        employeeService,
+                        userAccountService,
+                        leaveService,
+                        payrollService
+                ).setVisible(true)
+        );
     }
 
     private boolean isEmployeeModuleAllowed(String role) {
@@ -199,8 +245,10 @@ public class DashboardPanel extends JFrame {
         return "IT".equals(role);
     }
 
-    private String roleName(AuthenticatedUser user) {
-        return user == null || user.getRole() == null ? "" : user.getRole().name();
+    private String getCurrentRoleName() {
+        return currentUser == null || currentUser.getRole() == null
+                ? ""
+                : currentUser.getRole().name();
     }
 
     private String safe(String value, String fallback) {
@@ -212,7 +260,7 @@ public class DashboardPanel extends JFrame {
         button.setIcon(loadImageIcon("/assets/" + iconFileName, 20, 20));
         button.setHorizontalAlignment(SwingConstants.LEFT);
         button.setIconTextGap(15);
-        button.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        button.setFont(REGULAR_FONT);
         button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 45));
         button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         button.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
@@ -225,7 +273,7 @@ public class DashboardPanel extends JFrame {
         button.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseEntered(MouseEvent e) {
-                button.setBackground(new Color(240, 240, 240));
+                button.setBackground(NAV_HOVER_COLOR);
             }
 
             @Override
@@ -239,13 +287,24 @@ public class DashboardPanel extends JFrame {
 
     private ImageIcon loadImageIcon(String path, int width, int height) {
         URL imageUrl = getClass().getResource(path);
-        if (imageUrl != null) {
-            ImageIcon icon = new ImageIcon(imageUrl);
-            Image scaled = icon.getImage().getScaledInstance(width, height, Image.SCALE_SMOOTH);
-            return new ImageIcon(scaled);
-        } else {
+        if (imageUrl == null) {
             System.err.println("Image not found: " + path);
             return null;
+        }
+
+        ImageIcon icon = new ImageIcon(imageUrl);
+        Image scaled = icon.getImage().getScaledInstance(width, height, Image.SCALE_SMOOTH);
+        return new ImageIcon(scaled);
+    }
+
+    private static class GradientPanel extends JPanel {
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+
+            Graphics2D g2d = (Graphics2D) g;
+            g2d.setPaint(new GradientPaint(0, 0, GRADIENT_START, 0, getHeight(), GRADIENT_END));
+            g2d.fillRect(0, 0, getWidth(), getHeight());
         }
     }
 }

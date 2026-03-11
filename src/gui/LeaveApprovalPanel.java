@@ -1,10 +1,8 @@
 package gui;
 
-import model.LeaveRequest;
-import model.LeaveStatus;
-import model.User;
-import repository.FileLeaveRepository;
-import repository.LeaveRepository;
+import service.AuthenticatedUser;
+import service.LeaveRequestDto;
+import service.LeaveService;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -12,55 +10,79 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 public class LeaveApprovalPanel extends JPanel {
 
-    private final User user;
-    private final LeaveRepository repo;
+    private final AuthenticatedUser currentUser;
+    private final LeaveService leaveService;
 
-    // ✅ Added Date Range column + RequestedAt
     private final DefaultTableModel model = new DefaultTableModel(
             new String[]{"LeaveId", "EmployeeId", "Type", "Date Range", "Status", "Requested At"}, 0
     ) {
         @Override
         public boolean isCellEditable(int row, int column) {
-            return false; // read-only
+            return false;
         }
     };
 
     private final JTable table = new JTable(model);
 
-    private final JButton viewReasonBtn = new JButton("View Reason");
-    private final JButton refreshBtn = new JButton("Refresh");
-    private final JButton approveBtn = new JButton("Approve");
-    private final JButton denyBtn = new JButton("Deny");
+    private final JButton viewReasonButton = new JButton("View Reason");
+    private final JButton refreshButton = new JButton("Refresh");
+    private final JButton approveButton = new JButton("Approve");
+    private final JButton denyButton = new JButton("Deny");
 
-    public LeaveApprovalPanel(User user) {
-        this.user = user;
-        this.repo = new FileLeaveRepository();
+    public LeaveApprovalPanel(LeaveService leaveService, AuthenticatedUser currentUser) {
+        this.leaveService = leaveService;
+        this.currentUser = currentUser;
 
         setLayout(new BorderLayout());
         setBorder(new EmptyBorder(20, 20, 20, 20));
         setOpaque(false);
 
+        buildUI();
+        wireEvents();
+        loadPending();
+    }
+
+    private void buildUI() {
         JLabel title = new JLabel("Leave Approvals (HR/Admin)");
         title.setFont(new Font("Segoe UI", Font.BOLD, 20));
 
-        // Table settings
         table.setRowHeight(26);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
-        // ✅ Enable/disable buttons on selection
+        JScrollPane scrollPane = new JScrollPane(table);
+
+        viewReasonButton.setEnabled(false);
+        approveButton.setEnabled(false);
+        denyButton.setEnabled(false);
+
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        topPanel.setOpaque(false);
+        topPanel.add(refreshButton);
+        topPanel.add(viewReasonButton);
+
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        bottomPanel.setOpaque(false);
+        bottomPanel.add(denyButton);
+        bottomPanel.add(approveButton);
+
+        add(title, BorderLayout.NORTH);
+        add(scrollPane, BorderLayout.CENTER);
+        add(topPanel, BorderLayout.WEST);
+        add(bottomPanel, BorderLayout.SOUTH);
+    }
+
+    private void wireEvents() {
         table.getSelectionModel().addListSelectionListener(e -> {
             boolean selected = table.getSelectedRow() != -1;
-            viewReasonBtn.setEnabled(selected);
-            approveBtn.setEnabled(selected);
-            denyBtn.setEnabled(selected);
+            viewReasonButton.setEnabled(selected);
+            approveButton.setEnabled(selected);
+            denyButton.setEnabled(selected);
         });
 
-        // ✅ Double-click opens "View Reason"
         table.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -70,136 +92,159 @@ public class LeaveApprovalPanel extends JPanel {
             }
         });
 
-        JScrollPane scroll = new JScrollPane(table);
-
-        // Buttons
-        refreshBtn.addActionListener(e -> loadPending());
-        viewReasonBtn.addActionListener(e -> showReasonPopup());
-        approveBtn.addActionListener(e -> approveSelected());
-        denyBtn.addActionListener(e -> denySelected());
-
-        // Initial state
-        viewReasonBtn.setEnabled(false);
-        approveBtn.setEnabled(false);
-        denyBtn.setEnabled(false);
-
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        top.setOpaque(false);
-        top.add(refreshBtn);
-        top.add(viewReasonBtn);
-
-        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        bottom.setOpaque(false);
-        bottom.add(denyBtn);
-        bottom.add(approveBtn);
-
-        add(title, BorderLayout.NORTH);
-        add(scroll, BorderLayout.CENTER);
-        add(top, BorderLayout.WEST);
-        add(bottom, BorderLayout.SOUTH);
-
-        loadPending();
+        refreshButton.addActionListener(e -> loadPending());
+        viewReasonButton.addActionListener(e -> showReasonPopup());
+        approveButton.addActionListener(e -> approveSelected());
+        denyButton.addActionListener(e -> denySelected());
     }
 
     private void loadPending() {
         model.setRowCount(0);
 
-        List<LeaveRequest> pending = repo.findByStatus(LeaveStatus.PENDING);
-        for (LeaveRequest r : pending) {
+        List<LeaveRequestDto> pendingRequests = leaveService.findPendingLeaves();
 
-            String range = formatRange(r);
-
+        for (LeaveRequestDto request : pendingRequests) {
             model.addRow(new Object[]{
-                    r.getLeaveId(),
-                    r.getEmployeeId(),
-                    r.getLeaveType().name(),
-                    range,
-                    r.getStatus().name(),
-                    r.getRequestedAt() == null ? "" : r.getRequestedAt().toString()
+                    safe(request.getLeaveId()),
+                    safe(request.getEmployeeId()),
+                    safe(request.getLeaveType()),
+                    safe(request.getDateRangeDisplay()),
+                    safe(request.getStatus()),
+                    safe(request.getRequestedAt())
             });
         }
     }
 
-    private String formatRange(LeaveRequest r) {
-        long days = ChronoUnit.DAYS.between(r.getStartDate(), r.getEndDate()) + 1; // inclusive
-        String dayLabel = days == 1 ? "day" : "days";
-        return r.getStartDate() + " \u2192 " + r.getEndDate() + " (" + days + " " + dayLabel + ")";
-    }
-
     private void showReasonPopup() {
-        int row = table.getSelectedRow();
-        if (row == -1) {
-            JOptionPane.showMessageDialog(this, "Select a leave request first.", "Select",
-                    JOptionPane.WARNING_MESSAGE);
+        String leaveId = getSelectedLeaveId();
+        if (leaveId == null) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Select a leave request first.",
+                    "Select",
+                    JOptionPane.WARNING_MESSAGE
+            );
             return;
         }
 
-        String leaveId = model.getValueAt(row, 0).toString();
+        LeaveRequestDto request = leaveService.findLeaveById(leaveId);
 
-        repo.findById(leaveId).ifPresentOrElse(req -> {
-            JTextArea area = new JTextArea(req.getReason());
-            area.setWrapStyleWord(true);
-            area.setLineWrap(true);
-            area.setEditable(false);
-            area.setCaretPosition(0);
+        if (request == null) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Leave request not found.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
 
-            JScrollPane sp = new JScrollPane(area);
-            sp.setPreferredSize(new Dimension(420, 220));
+        JTextArea textArea = new JTextArea(safe(request.getReason()));
+        textArea.setWrapStyleWord(true);
+        textArea.setLineWrap(true);
+        textArea.setEditable(false);
+        textArea.setCaretPosition(0);
 
-            String title = "Reason - " + req.getEmployeeId() + " (" + req.getLeaveType().name() + ")";
-            JOptionPane.showMessageDialog(this, sp, title, JOptionPane.INFORMATION_MESSAGE);
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(420, 220));
 
-        }, () -> JOptionPane.showMessageDialog(this, "Leave request not found.", "Error",
-                JOptionPane.ERROR_MESSAGE));
+        String dialogTitle = "Reason - " + safe(request.getEmployeeId()) + " (" + safe(request.getLeaveType()) + ")";
+        JOptionPane.showMessageDialog(this, scrollPane, dialogTitle, JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void approveSelected() {
-        if (!user.canManageEmployees()) {
-            JOptionPane.showMessageDialog(this, "Access denied.", "Permission",
-                    JOptionPane.WARNING_MESSAGE);
+        if (!canManageLeaves()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Access denied.",
+                    "Permission",
+                    JOptionPane.WARNING_MESSAGE
+            );
             return;
         }
 
-        int row = table.getSelectedRow();
-        if (row == -1) {
-            JOptionPane.showMessageDialog(this, "Select a leave request first.", "Select",
-                    JOptionPane.WARNING_MESSAGE);
+        String leaveId = getSelectedLeaveId();
+        if (leaveId == null) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Select a leave request first.",
+                    "Select",
+                    JOptionPane.WARNING_MESSAGE
+            );
             return;
         }
 
-        String leaveId = model.getValueAt(row, 0).toString();
+        boolean approved = leaveService.approveLeave(leaveId, currentUser);
 
-        repo.findById(leaveId).ifPresent(req -> {
-            req.approve(user.getEmployeeNumber());
-            repo.update(req);
-        });
+        if (!approved) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Failed to approve leave request.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
 
         loadPending();
-        JOptionPane.showMessageDialog(this, "✅ Approved.");
+        JOptionPane.showMessageDialog(this, "Approved.");
     }
 
     private void denySelected() {
-        if (!user.canManageEmployees()) {
-            JOptionPane.showMessageDialog(this, "Access denied.", "Permission",
-                    JOptionPane.WARNING_MESSAGE);
+        if (!canManageLeaves()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Access denied.",
+                    "Permission",
+                    JOptionPane.WARNING_MESSAGE
+            );
             return;
         }
 
-        int row = table.getSelectedRow();
-        if (row == -1) {
-            JOptionPane.showMessageDialog(this, "Select a leave request first.", "Select",
-                    JOptionPane.WARNING_MESSAGE);
+        String leaveId = getSelectedLeaveId();
+        if (leaveId == null) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Select a leave request first.",
+                    "Select",
+                    JOptionPane.WARNING_MESSAGE
+            );
             return;
         }
 
-        String leaveId = model.getValueAt(row, 0).toString();
+        boolean denied = leaveService.rejectLeave(leaveId, currentUser);
 
-        repo.findById(leaveId).ifPresent(req -> {
-            req.deny(user.getEmployeeNumber());
-            repo.update(req);
-        });
+        if (!denied) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Failed to deny leave request.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
 
         loadPending();
-        JOptionPane.showMessageDialog(this, "✅ Denied.");
+        JOptionPane.showMessageDialog(this, "Denied.");
+    }
+
+    private boolean canManageLeaves() {
+        return currentUser != null
+                && currentUser.getRole() != null
+                && "HRADMIN".equalsIgnoreCase(currentUser.getRole().name());
+    }
+
+    private String getSelectedLeaveId() {
+        int row = table.getSelectedRow();
+        if (row == -1) {
+            return null;
+        }
+
+        Object value = model.getValueAt(row, 0);
+        return safe(value);
+    }
+
+    private String safe(Object value) {
+        return value == null ? "" : value.toString().trim();
     }
 }

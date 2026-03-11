@@ -1,35 +1,128 @@
-// Import the custom DashboardPanel class from the gui package
-import gui.DashboardPanel;
-
-// Import the custom LoginPanel class from the gui package (currently commented out in use)
 import gui.LoginPanel;
 
-// Exception class for unsupported Look and Feel configurations
+import model.ContributionCalculator;
+import model.DefaultContributionCalculator;
+import model.DefaultEarningsCalculator;
+import model.DefaultTaxCalculator;
+import model.DefaultTaxableBenefitsPolicy;
+import model.DefaultWorkHoursCalculator;
+import model.EarningsCalculator;
+import model.MotorPHOvertimePolicy;
+import model.OvertimePolicy;
+import model.TaxCalculator;
+import model.TaxableBenefitsPolicy;
+import model.WorkHoursCalculator;
+
+import repository.AttendanceRepository;
+import repository.CredentialRepository;
+import repository.EmployeeRepository;
+import repository.FileAttendanceRepository;
+import repository.FileCredentialRepository;
+import repository.FileEmployeeRepository;
+import repository.FileLeaveRepository;
+import repository.LeaveRepository;
+
+import service.AuthService;
+import service.DefaultAuthService;
+import service.DefaultEmployeeService;
+import service.DefaultLeaveService;
+import service.DefaultPayrollService;
+import service.DefaultUserAccountService;
+import service.EmployeeService;
+import service.LeaveService;
+import service.PayrollService;
+import service.UserAccountService;
+
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 
 public class Main {
+
     public static void main(String[] args) {
+        setNimbusLookAndFeel();
 
-        // Attempt to set the look and feel to Nimbus (a modern Swing UI theme)
-        try {
-            javax.swing.UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");
-        } catch (ClassNotFoundException | IllegalAccessException | InstantiationException | UnsupportedLookAndFeelException e) {
-            // Exceptions are caught but not handled—could log or print error for better debugging
-        }
+        // =========================
+        // REPOSITORIES
+        // =========================
+        CredentialRepository credentialRepository = new FileCredentialRepository();
+        EmployeeRepository employeeRepository = new FileEmployeeRepository();
+        AttendanceRepository attendanceRepository = new FileAttendanceRepository();
+        LeaveRepository leaveRepository = new FileLeaveRepository();
 
-        // Ensures that all Swing components are created on the Event Dispatch Thread (EDT)
-        // This is the recommended approach for thread safety in Swing applications
-        javax.swing.SwingUtilities.invokeLater(() -> {
+        // =========================
+        // OPTIONAL EAGER LOAD
+        // =========================
+        credentialRepository.load();
+        employeeRepository.load();
+        attendanceRepository.load();
+//        leaveRepository.load();
 
-            // Uncomment the line below to show the LoginPanel instead of directly opening the dashboard
-//            LoginPanel loginPanel = new LoginPanel(); // Launches the login GUI
-            
-            // For now, bypasses login and opens the Dashboard directly with "Admin" user
-//            new DashboardPanel("Admin");
-            LoginPanel LoginPanel = new LoginPanel(); // Launch the login GUI
-          
+        // =========================
+        // DOMAIN / BUSINESS RULES
+        // =========================
+        OvertimePolicy overtimePolicy = new MotorPHOvertimePolicy();
+        WorkHoursCalculator workHoursCalculator = new DefaultWorkHoursCalculator(overtimePolicy);
+        EarningsCalculator earningsCalculator = new DefaultEarningsCalculator();
+        ContributionCalculator contributionCalculator = new DefaultContributionCalculator();
+        TaxableBenefitsPolicy taxableBenefitsPolicy = new DefaultTaxableBenefitsPolicy();
+        TaxCalculator taxCalculator = new DefaultTaxCalculator();
 
+        // =========================
+        // SERVICES
+        // =========================
+        AuthService authService = new DefaultAuthService(
+                credentialRepository,
+                employeeRepository
+        );
+
+        EmployeeService employeeService = new DefaultEmployeeService(
+                employeeRepository,
+                attendanceRepository
+        );
+
+        UserAccountService userAccountService = new DefaultUserAccountService(
+                credentialRepository,
+                employeeRepository
+        );
+
+        LeaveService leaveService = new DefaultLeaveService(
+                leaveRepository
+        );
+
+        PayrollService payrollService = new DefaultPayrollService(
+                employeeRepository,
+                attendanceRepository,
+                workHoursCalculator,
+                earningsCalculator,
+                contributionCalculator,
+                taxCalculator,
+                overtimePolicy,
+                taxableBenefitsPolicy
+        );
+
+        // =========================
+        // GUI
+        // =========================
+        SwingUtilities.invokeLater(() -> {
+            LoginPanel loginPanel = new LoginPanel(
+                    authService,
+                    employeeService,
+                    userAccountService,
+                    leaveService,
+                    payrollService
+            );
+            loginPanel.setVisible(true);
         });
     }
-}
 
+    private static void setNimbusLookAndFeel() {
+        try {
+            UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");
+        } catch (ClassNotFoundException
+                 | InstantiationException
+                 | IllegalAccessException
+                 | UnsupportedLookAndFeelException ignored) {
+        }
+    }
+}

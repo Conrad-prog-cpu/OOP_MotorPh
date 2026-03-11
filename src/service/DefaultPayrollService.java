@@ -56,7 +56,34 @@ public class DefaultPayrollService implements PayrollService {
     }
 
     @Override
-    public PayrollResult computeForDateRange(String employeeNumber, LocalDate start, LocalDate end) {
+    public PayrollResultDto computeForMonthDto(String employeeId, int year, int month) {
+        PayrollResult result = computeDomainForDateRange(
+                employeeId,
+                YearMonth.of(year, month).atDay(1),
+                YearMonth.of(year, month).atEndOfMonth()
+        );
+
+        Contributions contributions = result.getContributions();
+
+        return new PayrollResultDto(
+                result.getEmployeeId(),
+                scale2(result.getHoursWorked()).toPlainString(),
+                scale2(result.getOvertimeHours()).toPlainString(),
+                result.getLateMinutes(),
+                scale2(result.getBasicPay()).toPlainString(),
+                scale2(result.getAllowances()).toPlainString(),
+                scale2(result.getOvertimePay()).toPlainString(),
+                scale2(result.getLateDeduction()).toPlainString(),
+                scale2(result.getGrossPay()).toPlainString(),
+                contributions == null ? "0.00" : scale2(contributions.getSss()).toPlainString(),
+                contributions == null ? "0.00" : scale2(contributions.getPhilHealth()).toPlainString(),
+                contributions == null ? "0.00" : scale2(contributions.getPagIbig()).toPlainString(),
+                scale2(result.getWithholdingTax()).toPlainString(),
+                scale2(result.getNetPay()).toPlainString()
+        );
+    }
+
+    public PayrollResult computeDomainForDateRange(String employeeNumber, LocalDate start, LocalDate end) {
         String employeeId = normalizeEmployeeNumber(employeeNumber);
         validateDateRange(start, end);
 
@@ -130,12 +157,6 @@ public class DefaultPayrollService implements PayrollService {
         );
     }
 
-    @Override
-    public PayrollResult computeForMonth(String employeeNumber, int year, int month) {
-        YearMonth ym = YearMonth.of(year, month);
-        return computeForDateRange(employeeNumber, ym.atDay(1), ym.atEndOfMonth());
-    }
-
     private String normalizeEmployeeNumber(String employeeNumber) {
         String value = employeeNumber == null ? "" : employeeNumber.trim();
         if (value.isEmpty()) {
@@ -193,5 +214,15 @@ public class DefaultPayrollService implements PayrollService {
 
     private BigDecimal scale2(BigDecimal value) {
         return nz(value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    @Override
+    public PayrollResult computeForDateRange(String employeeNumber, LocalDate start, LocalDate end) {
+        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
+    }
+
+    @Override
+    public PayrollResult computeForMonth(String employeeNumber, int year, int month) {
+        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
     }
 }

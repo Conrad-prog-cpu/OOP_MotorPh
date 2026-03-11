@@ -12,4 +12,5 @@ import java.time.LocalDate;
 public interface PayrollService {
     PayrollResult computeForDateRange(String employeeNumber, LocalDate start, LocalDate end);
     PayrollResult computeForMonth(String employeeNumber, int year, int month);
+    PayrollResultDto computeForMonthDto(String employeeId, int year, int month);
 }
