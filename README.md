@@ -1,30 +1,38 @@
-MotorPH Payroll System in MPHC02
+MotorPH Payroll System
 
-This Java-based payroll system is developed for MotorPH to streamline employee management and automate weekly salary computations. It features integrated calculations for government-mandated deductions, including SSS, PhilHealth, Pag-IBIG, and withholding tax. The system is built using Java Swing for the graphical user interface (GUI) and utilizes text files for data storage and retrieval.
+A Java-based Payroll Management System developed for MotorPH to manage employee records, attendance, and payroll processing.
 
-Note: This version supports more than three (3) employees only, identified by the following employee numbers: 10001, 10002, and 10003 and More.
+This project demonstrates how a procedural payroll implementation (CP2 Non-OOP code) can be refactored into a clean Object-Oriented system using layered architecture, interfaces, and modular services.
 
-
-
-System Access
-
-Username: admin
-
-Password: 1234
+The system is designed to be maintainable, extensible, and scalable, following Object-Oriented Programming (OOP) principles and Clean Architecture practices.
 
 
-(Development Team)
+Project Overview
 
-Rhynne Gracelle Pontanilla -
-Add a form or frame that displays the following fields for all employees in a JTable: Employee Number, Last Name, First Name, SSS Number, PhilHealth Number, TIN, and Pag-IBIG Number.
-Allow the user to select an employee from the table and click the "View Employee" button to open a new frame displaying the employee’s full details.
+MotorPH Payroll System allows administrators to:
+Manage employee information
+Track attendance
+Calculate payroll
+Generate salary breakdowns
+Maintain payroll records using CSV data sources
 
-Carl Justine Pontanilla - 
-Add a "New Employee" button that opens a form for entering new employee information.
+The project refactors an earlier CP2 procedural implementation into a structured OOP-based design, improving:
 
-Ghaby Gonzales – 
-Upon submission, the new employee’s data should be appended to the CSV file, and the JTable should refresh to show the updated list of employees./ Modified Addemployeepanel & Employeepanel.
+Code readability
+Maintainability
+Separation of concerns
+Reusability
 
-Conrado Santos – 
-File handler, Write, read,all etc /  In the new frame, prompt the user to select the month for which the program will compute the employee’s salary.
-After clicking the "Compute" button, display both the employee’s details and the computed salary information within the same frame.
+Key Features
+Employee management
+Attendance tracking
+Payroll calculation
+Salary deductions (tax, government contributions)
+CSV-based data persistence
+Graphical User Interface (Java Swing)
+
+Prepared By:
+Conrado G. Santos Jr.
+Jace Dhyn De Villa
+Jenny Rose Villaroza
+Kennan Atienza
